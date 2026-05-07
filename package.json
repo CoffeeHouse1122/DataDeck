@@ -1,0 +1,53 @@
+{
+  "name": "datadeck",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Windows desktop app for monthly data processing and PPT generation.",
+  "main": "dist-electron/main/index.js",
+  "type": "module",
+  "scripts": {
+    "dev": "electron-vite dev --watch --outDir dist-electron",
+    "build": "vue-tsc --noEmit && electron-vite build --outDir dist-electron",
+    "preview": "electron-vite preview --outDir dist-electron"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "fast-xml-parser": "^4.5.3",
+    "jszip": "^3.10.1",
+    "pptxgenjs": "^3.12.0",
+    "remixicon": "^4.6.0",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.17",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "@vue/typescript-plugin": "^3.2.8",
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3",
+    "electron-vite": "^2.3.0",
+    "typescript": "^5.8.3",
+    "vite": "^5.4.19",
+    "vue-tsc": "^2.2.10"
+  },
+  "build": {
+    "appId": "com.zhero.datadeck",
+    "productName": "DataDeck",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
