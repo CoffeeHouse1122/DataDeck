@@ -8,7 +8,9 @@
   "scripts": {
     "dev": "electron-vite dev --watch --outDir dist-electron",
     "build": "vue-tsc --noEmit && electron-vite build --outDir dist-electron",
-    "preview": "electron-vite preview --outDir dist-electron"
+    "preview": "electron-vite preview --outDir dist-electron",
+    "pack:win": "npm run build && electron-builder --win dir",
+    "dist:win": "npm run build && electron-builder --win nsis"
   },
   "dependencies": {
     "exceljs": "^4.4.0",
@@ -35,6 +37,7 @@
     "directories": {
       "output": "release"
     },
+    "artifactName": "${productName}-${version}-Setup.${ext}",
     "files": [
       "dist/**",
       "dist-electron/**",
