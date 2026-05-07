@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import type { AppPreferences } from '../../shared/contracts'
-import { DEFAULT_FOCUS_JOURNAL_ORDER, DEFAULT_FORCE_AE_STAFF, DEFAULT_SUMMARY_OVERRIDES } from '../../shared/contracts'
+import type { AppPreferences } from '../../../shared/contracts'
+import { DEFAULT_FOCUS_JOURNAL_ORDER, DEFAULT_FORCE_AE_STAFF, DEFAULT_SUMMARY_OVERRIDES } from '../../../shared/contracts'
 
 const SETTINGS_FILE = 'preferences.json'
 

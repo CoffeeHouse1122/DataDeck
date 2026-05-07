@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppPreferences, ElectronApi, FilePickerOptions, PipelineInput, PipelineProgressEvent, PipelineResult } from '../shared/contracts'
+import type { AppPreferences, ElectronApi, FilePickerOptions, PipelineInput, PipelineProgressEvent, PipelineResult } from '../../shared/contracts'
 
 const electronApi: ElectronApi = {
   pickFile: (options: FilePickerOptions) => ipcRenderer.invoke('pick:file', options),

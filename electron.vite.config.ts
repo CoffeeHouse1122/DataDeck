@@ -5,15 +5,26 @@ import { resolve } from 'node:path'
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        input: resolve('src/electron/main/index.ts')
+      }
+    },
     resolve: {
       alias: {
         '@shared': resolve('src/shared'),
-        '@main': resolve('src/main')
+        '@electron': resolve('src/electron'),
+        '@main': resolve('src/electron/main')
       }
     }
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
+    build: {
+      rollupOptions: {
+        input: resolve('src/electron/preload/index.ts')
+      }
+    },
     resolve: {
       alias: {
         '@shared': resolve('src/shared')

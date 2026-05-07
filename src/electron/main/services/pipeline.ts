@@ -3,7 +3,7 @@ import ExcelJS from 'exceljs'
 import JSZip from 'jszip'
 import { XMLBuilder, XMLParser } from 'fast-xml-parser'
 import type { IpcMainInvokeEvent } from 'electron'
-import type { PipelineInput, PipelineProgressEvent, PipelineResult } from '../../shared/contracts'
+import type { PipelineInput, PipelineProgressEvent, PipelineResult } from '../../../shared/contracts'
 import { buildPresentation } from './ppt'
 import { interpolateColor, renderTableSvg, renderWorksheetRangeSvg } from './svg'
 import {

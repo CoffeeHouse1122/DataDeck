@@ -240,7 +240,7 @@ onBeforeUnmount(() => {
     <main class="workspace">
       <section class="hero panel">
         <div class="hero__copy">
-          <span class="eyebrow">GitHub-style desktop workflow</span>
+          <!-- <span class="eyebrow">GitHub-style desktop workflow</span> -->
           <h1>把 MR、模板和输出步骤，收成一个能直接交付的桌面流程。</h1>
           <p>程序会整理 Excel、计算完成率、更新重点刊趋势，并复制 PPT 模板生成结果文件。</p>
         </div>
@@ -665,8 +665,14 @@ onBeforeUnmount(() => {
 
 .path-grid {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 6px;
+}
+
+@media (max-width: 1180px) {
+  .path-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 .content-grid {

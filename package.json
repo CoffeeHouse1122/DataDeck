@@ -40,12 +40,21 @@
       "dist-electron/**",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "build/icons",
+        "to": "icons"
+      }
+    ],
     "win": {
+      "icon": "build/icons/favicon.ico",
       "target": [
         "nsis"
       ]
     },
     "nsis": {
+      "installerIcon": "build/icons/favicon.ico",
+      "uninstallerIcon": "build/icons/favicon.ico",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     }

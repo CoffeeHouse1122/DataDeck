@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
 import path from 'node:path'
-import type { AppPreferences, FilePickerOptions, PipelineInput } from '../shared/contracts'
+import type { AppPreferences, FilePickerOptions, PipelineInput } from '../../shared/contracts'
 import { loadPreferences, savePreferences } from './services/settings'
 import { runPipeline } from './services/pipeline'
 
@@ -24,6 +24,11 @@ function stringifyError(error: unknown): string {
 }
 
 function createTrayIcon(): Electron.NativeImage {
+  const icon = nativeImage.createFromPath(appIconPath('favicon.ico'))
+  if (!icon.isEmpty()) {
+    return icon
+  }
+
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
       <rect width="32" height="32" rx="7" fill="#0d1117"/>
@@ -32,6 +37,12 @@ function createTrayIcon(): Electron.NativeImage {
     </svg>
   `
   return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`)
+}
+
+function appIconPath(fileName: string): string {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'icons', fileName)
+    : path.join(process.cwd(), 'build', 'icons', fileName)
 }
 
 async function currentPreferences(): Promise<AppPreferences> {
@@ -48,6 +59,7 @@ async function createWindow(): Promise<void> {
     minWidth: 1120,
     minHeight: 720,
     title: 'DataDeck',
+    icon: appIconPath('favicon.ico'),
     backgroundColor: '#0d1117',
     autoHideMenuBar: true,
     webPreferences: {

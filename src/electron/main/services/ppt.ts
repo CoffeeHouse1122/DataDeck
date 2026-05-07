@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises'
 import JSZip from 'jszip'
-import type { PipelineResult } from '../../shared/contracts'
+import type { PipelineResult } from '../../../shared/contracts'
 import { renderTableSvg } from './svg'
 
 type CompletionRow = {
