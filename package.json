@@ -47,6 +47,18 @@
       {
         "from": "build/icons",
         "to": "icons"
+      },
+      {
+        "from": "docs/monthly-data-generated-202603.xlsx",
+        "to": "templates/monthly-data-generated-202603.xlsx"
+      },
+      {
+        "from": "docs/staff-data-generated-202603.xlsx",
+        "to": "templates/staff-data-generated-202603.xlsx"
+      },
+      {
+        "from": "docs/editors-journals.xlsx",
+        "to": "templates/editors-journals.xlsx"
       }
     ],
     "win": {

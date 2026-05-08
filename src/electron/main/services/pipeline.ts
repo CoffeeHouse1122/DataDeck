@@ -161,6 +161,8 @@ type FocusJournalSeries = {
   underProcessing: number[]
   mpt: number[]
   tfd: number[]
+  primaryMonths: string[]
+  secondaryMonths: string[]
   primaryMetrics: Array<{ label: string; values: number[] }>
   secondaryMetrics: Array<{ label: string; values: number[] }>
 }
@@ -408,6 +410,117 @@ function nextRelationshipId(relationships: Array<Record<string, string>>): strin
   return `rId${Date.now()}`
 }
 
+function escapeXml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;')
+}
+
+function chartCacheXml(values: Array<string | number>, stringValues: boolean): string {
+  const points = values.map((value, index) => {
+    const content = stringValues ? escapeXml(String(value)) : String(Number(value) || 0)
+    return `<c:pt idx="${index}"><c:v>${content}</c:v></c:pt>`
+  }).join('')
+  return `<c:ptCount val="${values.length}"/>${points}`
+}
+
+function replaceNthChartCache(serXml: string, cacheTag: 'strCache' | 'numCache', occurrence: number, values: Array<string | number>, stringValues: boolean): string {
+  let seen = 0
+  const pattern = new RegExp(`<c:${cacheTag}>[\\s\\S]*?<\\/c:${cacheTag}>`, 'g')
+  return serXml.replace(pattern, (match) => {
+    if (seen !== occurrence) {
+      seen += 1
+      return match
+    }
+    seen += 1
+    return `<c:${cacheTag}>${chartCacheXml(values, stringValues)}</c:${cacheTag}>`
+  })
+}
+
+function chartFormulaSheetName(sheetName: string): string {
+  return sheetName.includes(' ') ? `'${sheetName.replace(/'/g, "''")}'` : sheetName
+}
+
+function replaceFocusChartFormulae(serXml: string, sheetName: string, monthIndex: number, headerRowIndex: number, metricCount: number): string {
+  const column = columnLetter(monthIndex + 2)
+  const labelStartRow = headerRowIndex + 1
+  const labelEndRow = headerRowIndex + metricCount
+  const escapedSheet = chartFormulaSheetName(sheetName)
+  const formulae = [
+    `${escapedSheet}!$${column}$${headerRowIndex}`,
+    `${escapedSheet}!$A$${labelStartRow}:$A$${labelEndRow}`,
+    `${escapedSheet}!$${column}$${labelStartRow}:$${column}$${labelEndRow}`
+  ]
+  let index = 0
+  return serXml.replace(/<c:f>[\s\S]*?<\/c:f>/g, (match) => {
+    if (index >= formulae.length) {
+      return match
+    }
+    const formula = formulae[index]
+    index += 1
+    return `<c:f>${escapeXml(formula)}</c:f>`
+  })
+}
+
+function updateFocusWorkbookChartXml(xml: string, sheetName: string, months: string[], metrics: Array<{ label: string; values: number[] }>, headerRowIndex: number): string {
+  const usableMonths = months.length ? months : ['']
+  const usableMetrics = metrics.length ? metrics : [{ label: '', values: [0] }]
+  const labels = usableMetrics.map((metric) => metric.label)
+  const seriesMatches = xml.match(/<c:ser>[\s\S]*?<\/c:ser>/g) ?? []
+  if (!seriesMatches.length) {
+    return xml
+  }
+
+  const templateSeries = seriesMatches[seriesMatches.length - 1]
+  const nextSeries = usableMonths.map((month, index) => {
+    const values = usableMetrics.map((metric) => metric.values[index] ?? 0)
+    let serXml = (seriesMatches[index] ?? templateSeries)
+      .replace(/<c:idx val="\d+"\s*\/>/, `<c:idx val="${index}"/>`)
+      .replace(/<c:order val="\d+"\s*\/>/, `<c:order val="${index}"/>`)
+      .replace(/<a:schemeClr val="accent\d+"\s*\/>/, `<a:schemeClr val="accent${(index % 6) + 1}"/>`)
+    serXml = replaceNthChartCache(serXml, 'strCache', 0, [month], true)
+    serXml = replaceNthChartCache(serXml, 'strCache', 1, labels, true)
+    serXml = replaceNthChartCache(serXml, 'numCache', 0, values, false)
+    return replaceFocusChartFormulae(serXml, sheetName, index, headerRowIndex, labels.length)
+  }).join('')
+
+  let replaced = false
+  return xml.replace(/(?:<c:ser>[\s\S]*?<\/c:ser>)+/, () => {
+    if (replaced) {
+      return ''
+    }
+    replaced = true
+    return nextSeries
+  })
+}
+
+function patchFocusWorkbookCharts(outputZip: JSZip, focusSeries: FocusJournalSeries[]): void {
+  const seriesBySheet = new Map(focusSeries.map((series) => [series.sheetName, series]))
+  for (const file of Object.values(outputZip.files)) {
+    if (file.dir || !file.name.startsWith('xl/charts/') || !file.name.endsWith('.xml')) {
+      continue
+    }
+
+    outputZip.file(file.name, file.async('text').then((xml) => {
+      for (const [sheetName, series] of seriesBySheet.entries()) {
+        if (!xml.includes(`${sheetName}!$`)) {
+          continue
+        }
+        const headerMatch = xml.match(new RegExp(`${sheetName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}!\\$[A-Z]+\\$(\\d+)`))
+        const headerRowIndex = Number(headerMatch?.[1] ?? 1)
+        if (headerRowIndex === 1) {
+          return updateFocusWorkbookChartXml(xml, sheetName, series.primaryMonths, series.primaryMetrics, 1)
+        }
+        return updateFocusWorkbookChartXml(xml, sheetName, series.secondaryMonths, series.secondaryMetrics, headerRowIndex)
+      }
+      return xml
+    }))
+  }
+}
+
 async function mergeContentTypeOverrides(sourceZip: JSZip, outputZip: JSZip): Promise<void> {
   const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' })
   const builder = new XMLBuilder({ ignoreAttributes: false, attributeNamePrefix: '@_', format: false })
@@ -427,7 +540,7 @@ async function mergeContentTypeOverrides(sourceZip: JSZip, outputZip: JSZip): Pr
   outputZip.file('[Content_Types].xml', builder.build(outputTypes))
 }
 
-async function preserveTemplateCharts(sourcePath: string, outputPath: string, sheetNames: string[]): Promise<void> {
+async function preserveTemplateCharts(sourcePath: string, outputPath: string, sheetNames: string[], focusSeries: FocusJournalSeries[] = []): Promise<void> {
   const [sourceBuffer, outputBuffer] = await Promise.all([fs.readFile(sourcePath), fs.readFile(outputPath)])
   const [sourceZip, outputZip] = await Promise.all([JSZip.loadAsync(sourceBuffer), JSZip.loadAsync(outputBuffer)])
   const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' })
@@ -492,6 +605,7 @@ async function preserveTemplateCharts(sourcePath: string, outputPath: string, sh
     outputZip.file(outputSheetPath, xmlWithDrawing)
   }
 
+  patchFocusWorkbookCharts(outputZip, focusSeries)
   await fs.writeFile(outputPath, await outputZip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }))
 }
 
@@ -1232,7 +1346,7 @@ function compactFocusMetricBlockColumns(sheet: ExcelJS.Worksheet, headerRow: Exc
     return
   }
 
-  const maxMonthColumns = Math.max(headerRow.cellCount, 13)
+  const maxMonthColumns = Math.max(lastFocusMonthColumn(headerRow), monthLabels.length + 1, 13)
   const sourceByLabel = new Map<string, number>()
   for (let col = 2; col <= maxMonthColumns; col += 1) {
     const label = normalizeText(headerRow.getCell(col).value)
@@ -1277,6 +1391,142 @@ function compactFocusMetricBlockColumns(sheet: ExcelJS.Worksheet, headerRow: Exc
   })
 }
 
+function lastFocusMonthColumn(headerRow: ExcelJS.Row): number {
+  let lastColumn = 1
+  const scanEndColumn = Math.min(Math.max(headerRow.cellCount, 13), 60)
+  for (let col = 2; col <= scanEndColumn; col += 1) {
+    if (normalizeText(headerRow.getCell(col).value)) {
+      lastColumn = col
+    }
+  }
+  return lastColumn
+}
+
+function copyFocusMonthColumn(sheet: ExcelJS.Worksheet, headerRowIndex: number, sourceColumn: number, targetColumn: number): void {
+  if (sourceColumn < 1 || sourceColumn === targetColumn) {
+    return
+  }
+
+  for (const rowIndex of [headerRowIndex, ...focusMetricRows(sheet, headerRowIndex)]) {
+    const sourceCell = sheet.getCell(rowIndex, sourceColumn)
+    const targetCell = sheet.getCell(rowIndex, targetColumn)
+    targetCell.style = deepClone(sourceCell.style)
+    if (sourceCell.numFmt) {
+      targetCell.numFmt = sourceCell.numFmt
+    }
+  }
+}
+
+type FocusMetricKey =
+  | 'publication'
+  | 'submission'
+  | 'processing'
+  | 'mpt'
+  | 'tfd'
+  | 'revenue'
+  | 'waiverRate'
+  | 'newSi'
+  | 'rejectionRate'
+
+function focusMetricKey(label: string): FocusMetricKey | null {
+  const normalized = normalizeText(label)
+    .replace(/\s+/g, '')
+    .replace(/[().%]/g, '')
+    .toLowerCase()
+
+  if (normalized === 'publication' || normalized === 'publ') {
+    return 'publication'
+  }
+  if (normalized === 'submission' || normalized === 'sub') {
+    return 'submission'
+  }
+  if (normalized === 'underprocessing' || normalized === 'processing') {
+    return 'processing'
+  }
+  if (normalized === 'mpt') {
+    return 'mpt'
+  }
+  if (normalized === 'tfd') {
+    return 'tfd'
+  }
+  if (normalized === 'revenuewchf') {
+    return 'revenue'
+  }
+  if (normalized === 'waiverrate') {
+    return 'waiverRate'
+  }
+  if (normalized === 'newsi' || normalized === 'newsis') {
+    return 'newSi'
+  }
+  if (normalized === 'rejectionrate') {
+    return 'rejectionRate'
+  }
+  return null
+}
+
+function focusMetricValue(row: GenericRow, key: FocusMetricKey): ExcelJS.CellValue {
+  if (key === 'publication') {
+    return toInteger(normalizeNumber(row['Publ.'] ?? row.Publ))
+  }
+  if (key === 'submission') {
+    return toInteger(normalizeNumber(row['Sub.'] ?? row.Sub))
+  }
+  if (key === 'processing') {
+    return toInteger(normalizeNumber(row.Processing))
+  }
+  if (key === 'mpt') {
+    return normalizeNumber(row.MPT)
+  }
+  if (key === 'tfd') {
+    return normalizeNumber(row.TFD)
+  }
+  if (key === 'revenue') {
+    return toInteger(normalizeNumber(row.Revenue) / 10000)
+  }
+  if (key === 'waiverRate') {
+    return Number((normalizeRate(row['Waiver Rate']) * 100).toFixed(2))
+  }
+  if (key === 'newSi') {
+    return toInteger(normalizeNumber(row['New SI']))
+  }
+
+  const rejectedBeforeReview = normalizeNumber(row['Rejected before review'])
+  const rejectedAfterReview = normalizeNumber(row['Rejected after review'])
+  const publication = normalizeNumber(row['Publ.'] ?? row.Publ)
+  const rejectedTotal = rejectedBeforeReview + rejectedAfterReview
+  const denominator = rejectedTotal + publication
+  return denominator ? Number(((rejectedTotal / denominator) * 100).toFixed(2)) : 0
+}
+
+function updateFocusMetricBlock(sheet: ExcelJS.Worksheet, headerRowIndex: number, reportColumn: number, rowSource: GenericRow): void {
+  if (reportColumn === -1) {
+    return
+  }
+
+  for (const rowIndex of focusMetricRows(sheet, headerRowIndex)) {
+    const key = focusMetricKey(normalizeText(sheet.getCell(rowIndex, 1).value))
+    if (!key) {
+      continue
+    }
+    sheet.getCell(rowIndex, reportColumn).value = focusMetricValue(rowSource, key)
+  }
+}
+
+function ensureFocusReportColumn(sheet: ExcelJS.Worksheet, headerRow: ExcelJS.Row, headerRowIndex: number, reportMonthLabel: string): number {
+  const scanEndColumn = Math.max(lastFocusMonthColumn(headerRow), 13)
+  for (let col = 2; col <= scanEndColumn; col += 1) {
+    if (normalizeText(headerRow.getCell(col).value) === reportMonthLabel) {
+      return col
+    }
+  }
+
+  const sourceColumn = lastFocusMonthColumn(headerRow)
+  const targetColumn = Math.max(2, sourceColumn + 1)
+  copyFocusMonthColumn(sheet, headerRowIndex, sourceColumn, targetColumn)
+  headerRow.getCell(targetColumn).value = reportMonthLabel
+  return targetColumn
+}
+
 function updateFocusJournalSheet(sheet: ExcelJS.Worksheet, context: ReportContext, rowSource: GenericRow | undefined): FocusJournalSeries {
   const displayName = sheet.name === 'BS' ? 'Brain Sciences' : sheet.name
   const resolvedSource = rowSource ?? {}
@@ -1299,26 +1549,11 @@ function updateFocusJournalSheet(sheet: ExcelJS.Worksheet, context: ReportContex
   const secondHeaderRow = headerRows[1] ?? sheet.getRow(5)
   const firstHeaderRowIndex = firstHeaderRow.number
   const secondHeaderRowIndex = secondHeaderRow.number
-  const findReportColumn = (row: ExcelJS.Row) => {
-    for (let col = 2; col <= Math.max(row.cellCount, 13); col += 1) {
-      if (normalizeText(row.getCell(col).value) === reportMonthLabel) {
-        return col
-      }
-    }
-    return -1
-  }
-  const firstColumn = findReportColumn(firstHeaderRow)
-  const secondColumn = findReportColumn(secondHeaderRow)
+  const firstColumn = ensureFocusReportColumn(sheet, firstHeaderRow, firstHeaderRowIndex, reportMonthLabel)
+  const secondColumn = ensureFocusReportColumn(sheet, secondHeaderRow, secondHeaderRowIndex, reportMonthLabel)
 
-  if (firstColumn !== -1) {
-    sheet.getCell(firstHeaderRowIndex + 1, firstColumn).value = toInteger(normalizeNumber(resolvedSource['Publ.']))
-    sheet.getCell(firstHeaderRowIndex + 2, firstColumn).value = toInteger(normalizeNumber(resolvedSource['Sub.']))
-    sheet.getCell(firstHeaderRowIndex + 3, firstColumn).value = toInteger(normalizeNumber(resolvedSource.Processing))
-  }
-  if (secondColumn !== -1) {
-    sheet.getCell(secondHeaderRowIndex + 1, secondColumn).value = normalizeNumber(resolvedSource.MPT)
-    sheet.getCell(secondHeaderRowIndex + 2, secondColumn).value = normalizeNumber(resolvedSource.TFD)
-  }
+  updateFocusMetricBlock(sheet, firstHeaderRowIndex, firstColumn, resolvedSource)
+  updateFocusMetricBlock(sheet, secondHeaderRowIndex, secondColumn, resolvedSource)
   leftAlignHeaderRow(firstHeaderRow, firstHeaderRow.cellCount)
   leftAlignHeaderRow(secondHeaderRow, secondHeaderRow.cellCount)
 
@@ -1398,6 +1633,8 @@ function updateFocusJournalSheet(sheet: ExcelJS.Worksheet, context: ReportContex
     underProcessing,
     mpt,
     tfd,
+    primaryMonths: primaryBlock.months,
+    secondaryMonths: secondaryBlock.months,
     primaryMetrics: primaryBlock.metrics,
     secondaryMetrics: secondaryBlock.metrics
   }
@@ -2648,7 +2885,9 @@ export async function runPipeline(event: IpcMainInvokeEvent, input: PipelineInpu
   for (const sheetName of focusOrder) {
     const worksheet = getWorksheetOrThrow(monthlyWorkbook, sheetName)
     const matchName = sheetName === 'BS' ? 'Brain Sciences' : sheetName
-    const sourceRow = journalRows.find((row) => normalizeText(row.Journal) === matchName)
+    const sourceRow = journalRows.find((row) =>
+      normalizeText(row.Section) === 'Section Health' && normalizeText(row.Journal) === matchName
+    )
     focusSeries.push(updateFocusJournalSheet(worksheet, context, sourceRow))
   }
 
@@ -2681,7 +2920,7 @@ export async function runPipeline(event: IpcMainInvokeEvent, input: PipelineInpu
   pptSnapshots.staffSiSubSvgs = staffSiSubSvgs
   pptSnapshots.staffAePublSvgs = staffAePublSvgs
   await monthlyWorkbook.xlsx.writeFile(monthlyOutputPath)
-  await preserveTemplateCharts(input.paths.monthlyTemplate, monthlyOutputPath, ['\u79d1\u5ba4\u6570\u636e', ...focusOrder])
+  await preserveTemplateCharts(input.paths.monthlyTemplate, monthlyOutputPath, ['\u79d1\u5ba4\u6570\u636e', ...focusOrder], focusSeries)
   await staffWorkbook.xlsx.writeFile(staffOutputPath)
   await verifySavedStaffWorkbookPiCompletion(staffOutputPath, editorRows)
 

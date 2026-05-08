@@ -16,19 +16,19 @@ export const PATH_FIELD_META = [
   {
     key: 'monthlyTemplate',
     label: '月会数据模板',
-    description: '选择“月会数据.xlsx”模板',
+    description: '默认使用 monthly-data-generated-202603.xlsx',
     filters: [{ name: 'Excel', extensions: ['xlsx'] }]
   },
   {
     key: 'staffTemplate',
     label: '人员数据模板',
-    description: '选择“人员数据.xlsx”模板',
+    description: '默认使用 staff-data-generated-202603.xlsx',
     filters: [{ name: 'Excel', extensions: ['xlsx'] }]
   },
   {
     key: 'editorsJournals',
     label: '人员刊物映射',
-    description: '选择“editors-journals.xlsx”参考文件',
+    description: '默认使用内置 editors-journals.xlsx',
     filters: [{ name: 'Excel', extensions: ['xlsx'] }]
   },
   {

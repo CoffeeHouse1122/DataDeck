@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
 import path from 'node:path'
-import type { AppPreferences, FilePickerOptions, PipelineInput } from '../../shared/contracts'
+import type { AppPreferences, FilePickerOptions, PipelineInput, SelectedPaths } from '../../shared/contracts'
 import { loadPreferences, savePreferences } from './services/settings'
 import { runPipeline } from './services/pipeline'
 
@@ -45,9 +45,23 @@ function appIconPath(fileName: string): string {
     : path.join(process.cwd(), 'build', 'icons', fileName)
 }
 
+function templatePath(fileName: string): string {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'templates', fileName)
+    : path.join(process.cwd(), 'docs', fileName)
+}
+
+function defaultTemplatePaths(): Partial<SelectedPaths> {
+  return {
+    monthlyTemplate: templatePath('monthly-data-generated-202603.xlsx'),
+    staffTemplate: templatePath('staff-data-generated-202603.xlsx'),
+    editorsJournals: templatePath('editors-journals.xlsx')
+  }
+}
+
 async function currentPreferences(): Promise<AppPreferences> {
   if (!cachedPreferences) {
-    cachedPreferences = await loadPreferences(app.getPath('userData'))
+    cachedPreferences = await loadPreferences(app.getPath('userData'), defaultTemplatePaths())
   }
   return cachedPreferences
 }
