@@ -602,41 +602,43 @@ function updateStaffPiCompletionText(xml: string, currentCount: number, delta: n
 }
 
 async function updateStaffPiCompletionSlide(zip: JSZip, summary: PptBuildInput['staffPiCompletion'], tableSvgs: string[]): Promise<void> {
-  const slidePath = 'ppt/slides/slide18.xml'
+  const slidePath = 'ppt/slides/slide19.xml'
   const slide = zip.file(slidePath)
   if (slide) {
     zip.file(slidePath, updateStaffPiCompletionText(await slide.async('string'), summary.currentCount, summary.delta))
   }
 
-  await replaceSlideImageWithSvg(zip, 18, 'rId3', 'staff-pi-completion-1.svg', tableSvgs[0] ?? blankSvg())
-  await replaceSlideImageWithSvg(zip, 18, 'rId4', 'staff-pi-completion-2.svg', tableSvgs[1] ?? blankSvg())
+  await replaceSlideImageWithSvg(zip, 19, 'rId1', 'staff-pi-completion-1.svg', tableSvgs[0] ?? blankSvg())
+  await replaceSlideImageWithSvg(zip, 19, 'rId2', 'staff-pi-completion-2.svg', tableSvgs[1] ?? blankSvg())
 }
 
 async function updateStaffOwnerPublicationSlide(zip: JSZip, tableSvgs: string[]): Promise<void> {
-  const slidePath = 'ppt/slides/slide19.xml'
+  const slidePath = 'ppt/slides/slide20.xml'
   const slide = zip.file(slidePath)
   if (slide) {
     const xml = await slide.async('string')
-    zip.file(slidePath, xml.replace(/<a:t>特刊发文<\/a:t>/g, '<a:t>owner发文</a:t>'))
+    zip.file(slidePath, xml
+      .replace(/<a:t>特刊发文<\/a:t>/g, '<a:t>owner发文</a:t>')
+      .replace(/<a:t>鐗瑰垔鍙戞枃<\/a:t>/g, '<a:t>owner发文</a:t>'))
   }
 
-  await replaceSlideImageWithSvg(zip, 19, 'rId3', 'staff-owner-publication.svg', tableSvgs[0] ?? blankSvg())
-  await replaceSlideImageWithSvg(zip, 19, 'rId4', 'mr-si-publ-top30.svg', tableSvgs[1] ?? blankSvg())
+  await replaceSlideImageWithSvg(zip, 20, 'rId1', 'staff-owner-publication.svg', tableSvgs[0] ?? blankSvg())
+  await replaceSlideImageWithSvg(zip, 20, 'rId2', 'mr-si-publ-top30.svg', tableSvgs[1] ?? blankSvg())
 }
 
 async function updateStaffSiSetupSlide(zip: JSZip, tableSvgs: string[]): Promise<void> {
-  await replaceSlideImageWithSvg(zip, 20, 'rId3', 'staff-sme-si-setup.svg', tableSvgs[0] ?? blankSvg())
-  await replaceSlideImageWithSvg(zip, 20, 'rId4', 'mr-si-setup-top30.svg', tableSvgs[1] ?? blankSvg())
+  await replaceSlideImageWithSvg(zip, 21, 'rId1', 'staff-sme-si-setup.svg', tableSvgs[0] ?? blankSvg())
+  await replaceSlideImageWithSvg(zip, 21, 'rId2', 'mr-si-setup-top30.svg', tableSvgs[1] ?? blankSvg())
 }
 
 async function updateStaffSiSubSlide(zip: JSZip, tableSvgs: string[]): Promise<void> {
-  await replaceSlideImageWithSvg(zip, 21, 'rId3', 'staff-sme-si-sub.svg', tableSvgs[0] ?? blankSvg())
-  await replaceSlideImageWithSvg(zip, 21, 'rId4', 'mr-si-sub-top30.svg', tableSvgs[1] ?? blankSvg())
+  await replaceSlideImageWithSvg(zip, 22, 'rId1', 'staff-sme-si-sub.svg', tableSvgs[0] ?? blankSvg())
+  await replaceSlideImageWithSvg(zip, 22, 'rId2', 'mr-si-sub-top30.svg', tableSvgs[1] ?? blankSvg())
 }
 
 async function updateStaffAePublSlide(zip: JSZip, tableSvgs: string[]): Promise<void> {
-  await replaceSlideImageWithSvg(zip, 22, 'rId3', 'staff-ae-publ.svg', tableSvgs[0] ?? blankSvg())
-  await replaceSlideImageWithSvg(zip, 22, 'rId4', 'mr-publ-top30.svg', tableSvgs[1] ?? blankSvg())
+  await replaceSlideImageWithSvg(zip, 23, 'rId1', 'staff-ae-publ.svg', tableSvgs[0] ?? blankSvg())
+  await replaceSlideImageWithSvg(zip, 23, 'rId2', 'mr-publ-top30.svg', tableSvgs[1] ?? blankSvg())
 }
 
 function xmlAttr(tag: string, name: string): string | null {
@@ -736,42 +738,6 @@ async function updateAppSlideCount(zip: JSZip): Promise<void> {
   zip.file('docProps/app.xml', appXml.replace(/<Slides>(\d+)<\/Slides>/, (_match, count) => `<Slides>${Number.parseInt(count, 10) + 1}</Slides>`))
 }
 
-async function insertBlankSlideAfter(zip: JSZip, afterSlideNumber: number): Promise<void> {
-  const presentationFile = zip.file('ppt/presentation.xml')
-  const presentationRelsFile = zip.file('ppt/_rels/presentation.xml.rels')
-  if (!presentationFile || !presentationRelsFile) {
-    return
-  }
-
-  const presentationXml = await presentationFile.async('string')
-  const relsXml = await presentationRelsFile.async('string')
-  const afterRelId = presentationSlideRelationshipId(relsXml, afterSlideNumber)
-  if (!afterRelId) {
-    return
-  }
-
-  const slideNumber = nextSlideNumber(zip)
-  const slideRelId = nextPresentationRelationshipId(relsXml)
-  const slideId = nextPresentationSlideId(presentationXml)
-  const layoutTarget = await slideLayoutTarget(zip, afterSlideNumber)
-  const newSlideTag = `<p:sldId id="${slideId}" r:id="${slideRelId}"/>`
-  const slideTags = presentationXml.match(/<p:sldId\b[^>]*\/>/g) ?? []
-  const afterSlideTag = slideTags.find((tag) => xmlAttr(tag, 'r:id') === afterRelId)
-
-  zip.file(`ppt/slides/slide${slideNumber}.xml`, blankSlideXml())
-  zip.file(`ppt/slides/_rels/slide${slideNumber}.xml.rels`, blankSlideRelsXml(layoutTarget))
-  zip.file('ppt/_rels/presentation.xml.rels', relsXml.replace(
-    '</Relationships>',
-    `<Relationship Id="${slideRelId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${slideNumber}.xml"/></Relationships>`
-  ))
-  zip.file('ppt/presentation.xml', afterSlideTag
-    ? presentationXml.replace(afterSlideTag, `${afterSlideTag}${newSlideTag}`)
-    : presentationXml.replace('</p:sldIdLst>', `${newSlideTag}</p:sldIdLst>`)
-  )
-  await ensureSlideContentType(zip, slideNumber)
-  await updateAppSlideCount(zip)
-}
-
 export async function buildPresentation(input: PptBuildInput): Promise<void> {
   const zip = await JSZip.loadAsync(await fs.readFile(input.templatePath))
 
@@ -806,6 +772,5 @@ export async function buildPresentation(input: PptBuildInput): Promise<void> {
   await updateStaffSiSetupSlide(zip, input.snapshots.staffSiSetupSvgs)
   await updateStaffSiSubSlide(zip, input.snapshots.staffSiSubSvgs)
   await updateStaffAePublSlide(zip, input.snapshots.staffAePublSvgs)
-  await insertBlankSlideAfter(zip, 17)
   await fs.writeFile(input.outputPath, await zip.generateAsync({ type: 'nodebuffer' }))
 }

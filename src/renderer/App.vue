@@ -28,6 +28,7 @@ const paths = reactive<SelectedPaths>({
   pptTemplate: '',
   outputDir: ''
 })
+const defaultPaths = reactive<Partial<SelectedPaths>>({})
 
 const closeBehavior = ref<AppPreferences['closeBehavior']>('tray')
 const focusJournalOrder = ref<string[]>([...DEFAULT_FOCUS_JOURNAL_ORDER])
@@ -151,6 +152,10 @@ async function handleReveal(key: keyof SelectedPaths): Promise<void> {
   }
 }
 
+function handleReset(key: keyof SelectedPaths): void {
+  paths[key] = defaultPaths[key] ?? ''
+}
+
 async function revealOutput(targetPath: string): Promise<void> {
   await window.electronApi.revealPath(targetPath)
 }
@@ -202,6 +207,7 @@ async function run(): Promise<void> {
 }
 
 onMounted(async () => {
+  Object.assign(defaultPaths, await window.electronApi.getDefaultPaths())
   const preferences = await window.electronApi.getPreferences()
   applyPreferences(preferences)
   unlisten = window.electronApi.onPipelineProgress((event) => {
@@ -272,9 +278,11 @@ onBeforeUnmount(() => {
             :label="item.label"
             :description="item.description"
             :value="paths[item.key]"
+            :default-value="defaultPaths[item.key] ?? ''"
             icon="ri-file-list-3-line"
             @pick="handlePick(item)"
             @reveal="handleReveal(item.key)"
+            @reset="handleReset(item.key)"
           />
         </div>
       </section>

@@ -1,5 +1,5 @@
 <script lang="ts">
-import { defineComponent } from 'vue'
+import { computed, defineComponent } from 'vue'
 
 export default defineComponent({
   name: 'PathField',
@@ -16,6 +16,10 @@ export default defineComponent({
       type: String,
       required: true
     },
+    defaultValue: {
+      type: String,
+      default: ''
+    },
     icon: {
       type: String,
       required: true
@@ -23,9 +27,20 @@ export default defineComponent({
   },
   emits: {
     pick: () => true,
-    reveal: () => true
+    reveal: () => true,
+    reset: () => true
   },
-  setup(_props, { emit }) {
+  setup(props, { emit }) {
+    const displayValue = computed(() => {
+      if (!props.value) {
+        return '点击选择文件或目录'
+      }
+      const parts = props.value.split(/[\\/]/).filter(Boolean)
+      return parts.at(-1) ?? props.value
+    })
+
+    const isDefault = computed(() => Boolean(props.defaultValue) && props.value === props.defaultValue)
+
     function pick(): void {
       emit('pick')
     }
@@ -34,9 +49,16 @@ export default defineComponent({
       emit('reveal')
     }
 
+    function reset(): void {
+      emit('reset')
+    }
+
     return {
+      displayValue,
+      isDefault,
       pick,
-      reveal
+      reveal,
+      reset
     }
   }
 })
@@ -49,13 +71,19 @@ export default defineComponent({
         <i :class="icon" />
         <span>{{ label }}</span>
       </div>
-      <button v-if="value" type="button" class="ghost" @click="reveal">
-        <i class="ri-folder-open-line" />
-      </button>
+      <div class="path-field__tools">
+        <button v-if="value" type="button" class="ghost" title="打开所在位置" @click="reveal">
+          <i class="ri-folder-open-line" />
+        </button>
+        <button v-if="value" type="button" class="ghost" :title="defaultValue ? '恢复默认路径' : '清除路径'" @click="reset">
+          <i :class="defaultValue ? 'ri-restart-line' : 'ri-close-line'" />
+        </button>
+      </div>
     </div>
     <p class="path-field__desc">{{ description }}</p>
     <button type="button" class="path-field__picker" @click="pick">
-      <span class="path-field__value">{{ value || '点击选择文件或目录' }}</span>
+      <span class="path-field__value" :title="value">{{ displayValue }}</span>
+      <span v-if="isDefault" class="path-field__badge">默认</span>
       <span class="path-field__action">浏览</span>
     </button>
   </div>
@@ -98,6 +126,13 @@ export default defineComponent({
   text-overflow: ellipsis;
 }
 
+.path-field__tools {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .path-field__desc {
   margin: 0;
   color: #57606a;
@@ -117,7 +152,7 @@ export default defineComponent({
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 7px;
+  gap: 6px;
   border: 1px solid #d0d7de;
   background: #f6f8fa;
   border-radius: 6px;
@@ -135,6 +170,20 @@ export default defineComponent({
   font-size: 10px;
 }
 
+.path-field__badge {
+  flex: none;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #ddf4ff;
+  color: #0969da;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .path-field__action {
   flex: none;
   white-space: nowrap;
@@ -149,11 +198,17 @@ export default defineComponent({
   background: #fff;
   color: #57606a;
   border-radius: 6px;
-  width: 26px;
+  width: 24px;
   height: 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+}
+
+.ghost:hover,
+.path-field__picker:hover {
+  border-color: #8c959f;
+  background: #f3f4f6;
 }
 </style>

@@ -5,6 +5,7 @@ const electronApi: ElectronApi = {
   pickFile: (options: FilePickerOptions) => ipcRenderer.invoke('pick:file', options),
   pickDirectory: (title: string) => ipcRenderer.invoke('pick:directory', title),
   getPreferences: () => ipcRenderer.invoke('preferences:get') as Promise<AppPreferences>,
+  getDefaultPaths: () => ipcRenderer.invoke('paths:defaults'),
   savePreferences: (preferences: AppPreferences) => ipcRenderer.invoke('preferences:save', preferences),
   runPipeline: (input: PipelineInput) => ipcRenderer.invoke('pipeline:run', input) as Promise<PipelineResult>,
   revealPath: (targetPath: string) => ipcRenderer.invoke('path:reveal', targetPath),

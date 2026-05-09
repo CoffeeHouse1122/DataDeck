@@ -55,7 +55,8 @@ function defaultTemplatePaths(): Partial<SelectedPaths> {
   return {
     monthlyTemplate: templatePath('monthly-data-generated-202603.xlsx'),
     staffTemplate: templatePath('staff-data-generated-202603.xlsx'),
-    editorsJournals: templatePath('editors-journals.xlsx')
+    editorsJournals: templatePath('editors-journals.xlsx'),
+    pptTemplate: templatePath('Section Health月会.pptx')
   }
 }
 
@@ -156,6 +157,8 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('preferences:get', async () => currentPreferences())
+
+  ipcMain.handle('paths:defaults', async () => defaultTemplatePaths())
 
   ipcMain.handle('preferences:save', async (_event, preferences: AppPreferences) => {
     cachedPreferences = preferences

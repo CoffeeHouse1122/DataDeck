@@ -1,6 +1,6 @@
 {
   "name": "datadeck",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Windows desktop app for monthly data processing and PPT generation.",
   "main": "dist-electron/main/index.js",
@@ -59,6 +59,10 @@
       {
         "from": "docs/editors-journals.xlsx",
         "to": "templates/editors-journals.xlsx"
+      },
+      {
+        "from": "docs/Section Health月会.pptx",
+        "to": "templates/Section Health月会.pptx"
       }
     ],
     "win": {

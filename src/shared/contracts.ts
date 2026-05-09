@@ -72,6 +72,7 @@ export interface ElectronApi {
   pickFile(options: FilePickerOptions): Promise<string | null>
   pickDirectory(title: string): Promise<string | null>
   getPreferences(): Promise<AppPreferences>
+  getDefaultPaths(): Promise<Partial<SelectedPaths>>
   savePreferences(preferences: AppPreferences): Promise<void>
   runPipeline(input: PipelineInput): Promise<PipelineResult>
   revealPath(targetPath: string): Promise<void>

@@ -34,7 +34,7 @@ export const PATH_FIELD_META = [
   {
     key: 'pptTemplate',
     label: 'PPT 模板',
-    description: '选择“Section Health月会.pptx”模板',
+    description: '默认使用内置 Section Health月会.pptx',
     filters: [{ name: 'PowerPoint', extensions: ['pptx'] }]
   },
   {

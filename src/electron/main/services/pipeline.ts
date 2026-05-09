@@ -120,6 +120,7 @@ type DepartmentMetrics = {
   submissionMom: number
   yearlySeries: Array<{
     label: string
+    rowIndex?: number
     publication: number
     submission: number
     assignedManuscript: number
@@ -521,6 +522,93 @@ function patchFocusWorkbookCharts(outputZip: JSZip, focusSeries: FocusJournalSer
   }
 }
 
+function departmentChartMetrics(metrics: DepartmentMetrics): Array<{ label: string; values: number[] }> {
+  return [
+    { label: 'Publication', values: metrics.yearlySeries.map((item) => item.publication) },
+    { label: 'Submission', values: metrics.yearlySeries.map((item) => item.submission) },
+    { label: 'Assigned Manuscript', values: metrics.yearlySeries.map((item) => item.assignedManuscript) },
+    { label: 'SI Set Up', values: metrics.yearlySeries.map((item) => item.siSetUp) },
+    { label: 'Revenue(WCHF)', values: metrics.yearlySeries.map((item) => item.revenueWCHF) },
+    { label: 'Waiver Rate(%)', values: metrics.yearlySeries.map((item) => item.waiverRate) },
+    { label: 'MPT', values: metrics.yearlySeries.map((item) => item.mpt) }
+  ]
+}
+
+function replaceDepartmentWorkbookFormulae(serXml: string, rowIndex: number, metricCount: number): string {
+  const endColumn = columnLetter(metricCount + 1)
+  const formulae = [
+    `科室数据!$A$${rowIndex}`,
+    `科室数据!$B$1:$${endColumn}$1`,
+    `科室数据!$B$${rowIndex}:$${endColumn}$${rowIndex}`
+  ]
+  let index = 0
+  return serXml.replace(/<c:f>[\s\S]*?<\/c:f>/g, (match) => {
+    if (index >= formulae.length) {
+      return match
+    }
+    const formula = formulae[index]
+    index += 1
+    return `<c:f>${escapeXml(formula)}</c:f>`
+  })
+}
+
+function updateDepartmentWorkbookChartXml(xml: string, metrics: DepartmentMetrics): string {
+  const usableSeries = metrics.yearlySeries.length ? metrics.yearlySeries : [{
+    label: '',
+    rowIndex: 2,
+    publication: 0,
+    submission: 0,
+    assignedManuscript: 0,
+    siSetUp: 0,
+    revenueWCHF: 0,
+    waiverRate: 0,
+    mpt: 0
+  }]
+  const chartMetrics = departmentChartMetrics({ ...metrics, yearlySeries: usableSeries })
+  const labels = chartMetrics.map((metric) => metric.label)
+  const seriesMatches = xml.match(/<c:ser>[\s\S]*?<\/c:ser>/g) ?? []
+  if (!seriesMatches.length) {
+    return xml
+  }
+
+  const templateSeries = seriesMatches[seriesMatches.length - 1]
+  const nextSeries = usableSeries.map((month, index) => {
+    const values = chartMetrics.map((metric) => metric.values[index] ?? 0)
+    let serXml = (seriesMatches[index] ?? templateSeries)
+      .replace(/<c:idx val="\d+"\s*\/>/, `<c:idx val="${index}"/>`)
+      .replace(/<c:order val="\d+"\s*\/>/, `<c:order val="${index}"/>`)
+      .replace(/<a:schemeClr val="accent\d+"\s*\/>/, `<a:schemeClr val="accent${(index % 6) + 1}"/>`)
+    serXml = replaceNthChartCache(serXml, 'strCache', 0, [month.label], true)
+    serXml = replaceNthChartCache(serXml, 'strCache', 1, labels, true)
+    serXml = replaceNthChartCache(serXml, 'numCache', 0, values, false)
+    return replaceDepartmentWorkbookFormulae(serXml, month.rowIndex ?? index + 2, labels.length)
+  }).join('')
+
+  let replaced = false
+  return xml.replace(/(?:<c:ser>[\s\S]*?<\/c:ser>)+/, () => {
+    if (replaced) {
+      return ''
+    }
+    replaced = true
+    return nextSeries
+  })
+}
+
+function patchDepartmentWorkbookCharts(outputZip: JSZip, metrics: DepartmentMetrics | undefined): void {
+  if (!metrics) {
+    return
+  }
+
+  for (const file of Object.values(outputZip.files)) {
+    if (file.dir || !file.name.startsWith('xl/charts/') || !file.name.endsWith('.xml')) {
+      continue
+    }
+    outputZip.file(file.name, file.async('text').then((xml) => (
+      xml.includes('科室数据!$') ? updateDepartmentWorkbookChartXml(xml, metrics) : xml
+    )))
+  }
+}
+
 async function mergeContentTypeOverrides(sourceZip: JSZip, outputZip: JSZip): Promise<void> {
   const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' })
   const builder = new XMLBuilder({ ignoreAttributes: false, attributeNamePrefix: '@_', format: false })
@@ -540,7 +628,13 @@ async function mergeContentTypeOverrides(sourceZip: JSZip, outputZip: JSZip): Pr
   outputZip.file('[Content_Types].xml', builder.build(outputTypes))
 }
 
-async function preserveTemplateCharts(sourcePath: string, outputPath: string, sheetNames: string[], focusSeries: FocusJournalSeries[] = []): Promise<void> {
+async function preserveTemplateCharts(
+  sourcePath: string,
+  outputPath: string,
+  sheetNames: string[],
+  focusSeries: FocusJournalSeries[] = [],
+  departmentMetrics?: DepartmentMetrics
+): Promise<void> {
   const [sourceBuffer, outputBuffer] = await Promise.all([fs.readFile(sourcePath), fs.readFile(outputPath)])
   const [sourceZip, outputZip] = await Promise.all([JSZip.loadAsync(sourceBuffer), JSZip.loadAsync(outputBuffer)])
   const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' })
@@ -598,14 +692,14 @@ async function preserveTemplateCharts(sourcePath: string, outputPath: string, sh
       ? outputSheetXml
       : outputSheetXml.replace('<worksheet ', '<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ')
     const xmlWithoutDrawing = xmlWithNamespace.replace(/<drawing\b[^>]*\/>/g, '')
-    const anchorMatch = xmlWithoutDrawing.match(/<(pageMargins|legacyDrawing|drawingHF|picture|tableParts|extLst)\b/)
+    const anchorMatch = xmlWithoutDrawing.match(/<(legacyDrawing|drawingHF|picture|oleObjects|controls|webPublishItems|tableParts|extLst)\b/)
     const xmlWithDrawing = anchorMatch?.index !== undefined
       ? `${xmlWithoutDrawing.slice(0, anchorMatch.index)}${drawingTag}${xmlWithoutDrawing.slice(anchorMatch.index)}`
       : xmlWithoutDrawing.replace('</worksheet>', `${drawingTag}</worksheet>`)
     outputZip.file(outputSheetPath, xmlWithDrawing)
   }
 
-  patchFocusWorkbookCharts(outputZip, focusSeries)
+  // Keep workbook chart XML intact; invalid chart XML makes Office repair the file and drop data.
   await fs.writeFile(outputPath, await outputZip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }))
 }
 
@@ -1040,7 +1134,7 @@ function computeDepartmentMetrics(journalRows: GenericRow[], context: ReportCont
   const submission = toInteger(healthRows.reduce((sum, row) => sum + normalizeNumber(row['Sub.']), 0))
   const submissionLast = toInteger(healthRows.reduce((sum, row) => sum + normalizeNumber(row['Sub/lastM']), 0))
   const assignedManuscript = toInteger(healthRows.reduce((sum, row) => sum + normalizeNumber(row.Processing), 0))
-  const siSetUp = toInteger(healthRows.reduce((sum, row) => sum + normalizeNumber(row['SIs(Open)']), 0))
+  const siSetUp = toInteger(healthRows.reduce((sum, row) => sum + normalizeNumber(row['New SI']), 0))
   const revenue = healthRows.reduce((sum, row) => sum + normalizeNumber(row.Revenue), 0) / 10000
   const revenueLast = healthRows.reduce((sum, row) => sum + normalizeNumber(row['Revenue/LastM']), 0) / 10000
   const revenueYoySource = healthRows.reduce((sum, row) => sum + normalizeNumber(row['Revenue/YoY']), 0) / 10000
@@ -1133,20 +1227,24 @@ function populateDepartmentSheet(sheet: ExcelJS.Worksheet, metrics: DepartmentMe
 
   if (targetRowIndex === -1) {
     targetRowIndex = sheet.rowCount + 1
+    const templateRow = sheet.getRow(Math.max(2, Math.min(sheet.rowCount, 13)))
+    const targetRow = sheet.getRow(targetRowIndex)
+    targetRow.height = templateRow.height
+    for (let col = 1; col <= 8; col += 1) {
+      copyStyle(templateRow.getCell(col), targetRow.getCell(col))
+    }
     sheet.getCell(targetRowIndex, 1).value = targetLabel
   }
 
-  if (!departmentRowHasValues(sheet, targetRowIndex)) {
-    const row = sheet.getRow(targetRowIndex)
-    row.getCell(2).value = metrics.publication
-    row.getCell(3).value = metrics.submission
-    row.getCell(4).value = metrics.assignedManuscript
-    row.getCell(5).value = metrics.siSetUp
-    row.getCell(6).value = metrics.revenueWCHF
-    row.getCell(7).value = Number((metrics.waiverRate * 100).toFixed(2))
-    row.getCell(8).value = metrics.mpt
-    row.getCell(7).numFmt = '0'
-  }
+  const row = sheet.getRow(targetRowIndex)
+  row.getCell(2).value = metrics.publication
+  row.getCell(3).value = metrics.submission
+  row.getCell(4).value = metrics.assignedManuscript
+  row.getCell(5).value = metrics.siSetUp
+  row.getCell(6).value = metrics.revenueWCHF
+  row.getCell(7).value = Number((metrics.waiverRate * 100).toFixed(2))
+  row.getCell(8).value = metrics.mpt
+  row.getCell(7).numFmt = '0'
 
   syncDepartmentMetricsFromSheet(sheet, targetRowIndex, metrics)
 
@@ -1166,6 +1264,7 @@ function populateDepartmentSheet(sheet: ExcelJS.Worksheet, metrics: DepartmentMe
     }
     yearlySeries.push({
       label,
+      rowIndex,
       publication: normalizeNumber(sheet.getCell(rowIndex, 2).value),
       submission: normalizeNumber(sheet.getCell(rowIndex, 3).value),
       assignedManuscript: normalizeNumber(sheet.getCell(rowIndex, 4).value),
@@ -1673,12 +1772,19 @@ function personLookupKeys(value: string): string[] {
 }
 
 function addJournalMapEntry(map: Map<string, Set<string>>, name: string, journal: string): void {
+  if (!name || !journal || journal === MISSING_JOURNAL_LABEL) {
+    return
+  }
   for (const key of personLookupKeys(name)) {
     if (!map.has(key)) {
       map.set(key, new Set())
     }
     map.get(key)?.add(journal)
   }
+}
+
+function journalMapHasPerson(map: Map<string, Set<string>>, name: string): boolean {
+  return personLookupKeys(name).some((key) => Boolean(map.get(key)?.size))
 }
 
 function buildJournalMap(workbook: ExcelJS.Workbook): Map<string, string[]> {
@@ -1718,10 +1824,13 @@ function mergeStaffTemplateJournalMap(workbook: ExcelJS.Workbook, journalMap: Ma
   const mergedMap = new Map(Array.from(journalMap.entries()).map(([key, journals]) => [key, new Set(journals)]))
   for (let rowIndex = 2; rowIndex <= sheet.rowCount; rowIndex += 1) {
     const staffName = compactName(normalizeText(sheet.getCell(rowIndex, staffColumn).value))
+    if (!staffName || journalMapHasPerson(mergedMap, staffName)) {
+      continue
+    }
     const journals = normalizeText(sheet.getCell(rowIndex, journalColumn).value)
-      .split(/[,，]/)
+      .split(/[,，/、;；]+/)
       .map((journal) => compactName(journal))
-      .filter(Boolean)
+      .filter((journal) => Boolean(journal) && journal !== MISSING_JOURNAL_LABEL)
     for (const journal of journals) {
       addJournalMapEntry(mergedMap, staffName, journal)
     }
@@ -1822,6 +1931,7 @@ const STAFF_JOURNAL_COLORS = new Map<string, string>([
   ['dietetics', '759E1F'],
   ['dna', '0F77B4'],
   ['surgical techniques development', '2682BA'],
+  ['std', '2682BA'],
   ['jvd', '6D1B1E'],
   ['cardiogenetics', '6262DE'],
   ['jmahp', '783CB4'],
@@ -2062,6 +2172,26 @@ function countStaffPiCompletionRows(workbook: ExcelJS.Workbook): number {
   return sheet ? staffPiCompletionRowIndices(sheet).length : 0
 }
 
+function missingJournalMappingStaffNames(sheet: ExcelJS.Worksheet): string[] {
+  const staffCol = worksheetHeaderColumn(sheet, 'Staff')
+  const journalCol = worksheetHeaderColumn(sheet, 'Journal')
+  if (!staffCol || !journalCol) {
+    return []
+  }
+
+  const names: string[] = []
+  for (let rowIndex = 2; rowIndex <= sheet.rowCount; rowIndex += 1) {
+    const journal = normalizeText(sheet.getCell(rowIndex, journalCol).value)
+    if (!journal || journal.includes(MISSING_JOURNAL_LABEL)) {
+      const name = compactName(normalizeText(sheet.getCell(rowIndex, staffCol).value))
+      if (name) {
+        names.push(name)
+      }
+    }
+  }
+  return names
+}
+
 function staffPiCompletionSnapshotOverlay(sheet: ExcelJS.Worksheet, rowIndices: number[]): (cell: ExcelJS.Cell, row: number, col: number) => SnapshotOverlay {
   const dataRows = Array.from({ length: Math.max(0, sheet.rowCount - 1) }, (_, index) => index + 2)
   const piValues = dataRows.map((rowIndex) => normalizeNumber(sheet.getCell(rowIndex, 6).value)).filter(Number.isFinite)
@@ -2166,41 +2296,37 @@ function buildStaffOwnerSnapshotOverlay(sheet: ExcelJS.Worksheet): (cell: ExcelJ
 
 function buildStaffOwnerSnapshot(sheet: ExcelJS.Worksheet): string {
   const ownerCol = worksheetHeaderColumn(sheet, 'PI (article owner)')
-  const piCompletionCol = worksheetHeaderColumn(sheet, 'PI Completion Rate')
+  const joinDateCol = worksheetHeaderColumn(sheet, 'Join Date')
   const siOpenCol = worksheetHeaderColumn(sheet, 'SI Open')
-  if (!ownerCol || !piCompletionCol || !siOpenCol) {
+  if (!ownerCol || !joinDateCol || !siOpenCol) {
     return ''
   }
 
   const rowIndices = Array.from({ length: Math.max(0, sheet.rowCount - 1) }, (_, index) => index + 2)
-    .filter((rowIndex) => normalizeNumber(sheet.getCell(rowIndex, ownerCol).value) > 10)
+    .filter((rowIndex) => normalizeNumber(sheet.getCell(rowIndex, ownerCol).value) >= 10)
     .sort((left, right) => normalizeNumber(sheet.getCell(right, ownerCol).value) - normalizeNumber(sheet.getCell(left, ownerCol).value))
   if (!rowIndices.length) {
     return ''
   }
 
   const dataRows = Array.from({ length: Math.max(0, sheet.rowCount - 1) }, (_, index) => index + 2)
-  const piCompletionValues = dataRows.map((rowIndex) => normalizeStaffPiCompletionRate(sheet.getCell(rowIndex, piCompletionCol).value)).filter(Number.isFinite)
   const siOpenValues = dataRows.map((rowIndex) => normalizeNumber(sheet.getCell(rowIndex, siOpenCol).value)).filter(Number.isFinite)
-  const piCompletionMin = Math.min(...piCompletionValues, 1)
-  const piCompletionMax = Math.max(...piCompletionValues, 1)
   const siOpenMax = Math.max(...siOpenValues, 1)
   const headerHeight = 42
   const rowHeight = 44
   const targetWidth = Math.round((headerHeight + rowIndices.length * rowHeight + 12) * 1.317)
   const baseColumns = [
-    { key: 'staff', label: 'Staff', width: 172 },
-    { key: 'journal', label: 'Journal', width: 252 },
-    { key: 'ownerPi', label: 'PI (article owner)', width: 104 },
-    { key: 'piCompletion', label: 'PI Completion Rate', width: 118 },
-    { key: 'siOpen', label: 'SI Open', width: 57 }
+    { key: 'staff', label: 'Staff', width: 190 },
+    { key: 'journal', label: 'Journal', width: 260 },
+    { key: 'joinDate', label: 'Join Date', width: 120 },
+    { key: 'ownerPi', label: 'PI (article owner)', width: 150 },
+    { key: 'siOpen', label: 'SI Open', width: 90 }
   ]
   const widthScale = Math.max(1, targetWidth / baseColumns.reduce((sum, column) => sum + column.width, 0))
 
   return renderTableSvg({
     columns: baseColumns.map((column) => ({ ...column, width: Math.round(column.width * widthScale) })),
     rows: rowIndices.map((rowIndex) => {
-      const piCompletion = normalizeStaffPiCompletionRate(sheet.getCell(rowIndex, piCompletionCol).value)
       const siOpen = normalizeNumber(sheet.getCell(rowIndex, siOpenCol).value)
       return {
         staff: {
@@ -2213,14 +2339,13 @@ function buildStaffOwnerSnapshot(sheet: ExcelJS.Worksheet): string {
           fontSize: 20,
           weight: 700 as const
         },
-        ownerPi: {
-          value: String(Math.round(normalizeNumber(sheet.getCell(rowIndex, ownerCol).value))),
+        joinDate: {
+          value: normalizeText(sheet.getCell(rowIndex, joinDateCol).value),
           fontSize: 20,
           weight: 700 as const
         },
-        piCompletion: {
-          value: `${(piCompletion * 100).toFixed(2)}%`,
-          background: threeColorScale(piCompletion, piCompletionMin, piCompletionMax),
+        ownerPi: {
+          value: String(Math.round(normalizeNumber(sheet.getCell(rowIndex, ownerCol).value))),
           fontSize: 20,
           weight: 700 as const
         },
@@ -2899,6 +3024,15 @@ export async function runPipeline(event: IpcMainInvokeEvent, input: PipelineInpu
   const staffDataSheet = staffWorkbookDataSheet(staffWorkbook)
   const staffAeSheet = staffWorkbook.getWorksheet('AE')
   const staffSmeSheet = staffWorkbook.getWorksheet('SME')
+  const missingJournalStaff = staffDataSheet ? missingJournalMappingStaffNames(staffDataSheet) : []
+  if (missingJournalStaff.length) {
+    emitProgress(
+      event,
+      'staff',
+      `Missing journal mapping: ${missingJournalStaff.slice(0, 12).join(', ')}${missingJournalStaff.length > 12 ? `, +${missingJournalStaff.length - 12} more` : ''}`,
+      'warning'
+    )
+  }
   const staffPiCompletionSvgs = staffDataSheet ? buildStaffPiCompletionSnapshots(staffDataSheet) : []
   const staffOwnerSvgs = staffSmeSheet ? buildStaffOwnerSnapshots(staffSmeSheet, editorRows) : []
   const staffSiSetupSvgs = staffSmeSheet ? buildStaffSiSetupSnapshots(staffSmeSheet, editorRows) : []
@@ -2920,7 +3054,7 @@ export async function runPipeline(event: IpcMainInvokeEvent, input: PipelineInpu
   pptSnapshots.staffSiSubSvgs = staffSiSubSvgs
   pptSnapshots.staffAePublSvgs = staffAePublSvgs
   await monthlyWorkbook.xlsx.writeFile(monthlyOutputPath)
-  await preserveTemplateCharts(input.paths.monthlyTemplate, monthlyOutputPath, ['\u79d1\u5ba4\u6570\u636e', ...focusOrder], focusSeries)
+  await preserveTemplateCharts(input.paths.monthlyTemplate, monthlyOutputPath, ['\u79d1\u5ba4\u6570\u636e', ...focusOrder], focusSeries, departmentMetrics)
   await staffWorkbook.xlsx.writeFile(staffOutputPath)
   await verifySavedStaffWorkbookPiCompletion(staffOutputPath, editorRows)
 
@@ -2956,7 +3090,10 @@ export async function runPipeline(event: IpcMainInvokeEvent, input: PipelineInpu
     assumptions: [
       'PPT is copied from the Section Health meeting template and patched in place.',
       'Department summary defaults to a Section Health rollup and can be overridden in settings.',
-      'Staff Journal values are mapped from the first-row journal columns in editors-journals.'
+      'Staff Journal values are mapped from the first-row journal columns in editors-journals.',
+      ...(missingJournalStaff.length
+        ? [`Missing journal mapping for: ${missingJournalStaff.join(', ')}`]
+        : [])
     ],
     detected: {
       reportKey: context.reportKey,
