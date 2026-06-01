@@ -302,7 +302,7 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <SimpleBarScroll class="workspace-scroll">
+    <main class="workspace-scroll">
       <div class="workspace">
         <section class="hero panel">
           <div class="brand hero__brand">
@@ -423,7 +423,7 @@ onBeforeUnmount(() => {
           </section>
         </section>
       </div>
-    </SimpleBarScroll>
+    </main>
 
     <transition name="drawer-fade">
       <div v-if="settingsOpen" class="drawer-backdrop" @click="settingsOpen = false" />
@@ -681,10 +681,9 @@ onBeforeUnmount(() => {
 
 .workspace-scroll {
   height: calc(100vh - var(--titlebar-height));
-  overflow: hidden;
+  overflow: auto;
 }
 
-.workspace-scroll > :deep(.simplebar-wrapper),
 .log-list > :deep(.simplebar-wrapper),
 .result-stack > :deep(.simplebar-wrapper),
 .drawer__body > :deep(.simplebar-wrapper) {
@@ -692,17 +691,11 @@ onBeforeUnmount(() => {
   max-height: 100%;
 }
 
-.workspace-scroll > :deep(.simplebar-wrapper > .simplebar-mask > .simplebar-offset > .simplebar-content-wrapper > .simplebar-content) {
-  height: 100%;
-  min-height: 100%;
-}
-
 .workspace {
-  height: 100%;
   min-height: 100%;
   padding: 12px;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto auto minmax(280px, 1fr);
   gap: 10px;
 }
 
@@ -825,8 +818,7 @@ onBeforeUnmount(() => {
 }
 
 .content-grid {
-  flex: 1;
-  min-height: 280px;
+  min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
   gap: 10px;
@@ -842,12 +834,9 @@ onBeforeUnmount(() => {
 
 .log-list,
 .result-stack {
-  flex: 1;
-  height: 100%;
+  flex: 1 1 0;
   min-height: 0;
   min-width: 0;
-  max-height: 100%;
-  overflow: hidden;
 }
 
 .log-list :deep(.simplebar-content),
@@ -1078,7 +1067,6 @@ onBeforeUnmount(() => {
 .drawer__body {
   height: 100%;
   min-height: 0;
-  overflow: hidden;
   padding-bottom: 10px;
 }
 
