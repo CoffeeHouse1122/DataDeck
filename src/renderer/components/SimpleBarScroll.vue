@@ -7,7 +7,7 @@ const props = withDefaults(defineProps<{
   contentClass?: string
   scrollbarMinSize?: number
 }>(), {
-  autoHide: false,
+  autoHide: true,
   contentClass: '',
   scrollbarMinSize: 36
 })

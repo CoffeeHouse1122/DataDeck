@@ -588,7 +588,7 @@ onBeforeUnmount(() => {
   inset: 2px;
   border-radius: 999px;
   background: #8c959f;
-  opacity: 0.62;
+  opacity: 0;
 }
 
 .app-shell :deep(.simplebar-scrollbar.simplebar-visible::before) {
