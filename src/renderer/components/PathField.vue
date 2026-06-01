@@ -178,7 +178,7 @@ export default defineComponent({
   padding: 0 5px;
   border-radius: 999px;
   background: #ddf4ff;
-  color: #0969da;
+  color: #0aa19e;
   font-size: 9px;
   font-weight: 700;
   line-height: 1;
@@ -189,7 +189,7 @@ export default defineComponent({
   white-space: nowrap;
   font-size: 10px;
   font-weight: 700;
-  color: #0969da;
+  color: #0aa19e;
 }
 
 .ghost {
