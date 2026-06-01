@@ -808,6 +808,7 @@ onBeforeUnmount(() => {
 .log-list,
 .result-stack {
   flex: 1;
+  height: 100%;
   min-height: 0;
   min-width: 0;
   max-height: 100%;
@@ -1040,6 +1041,7 @@ onBeforeUnmount(() => {
 }
 
 .drawer__body {
+  height: 100%;
   min-height: 0;
   overflow: hidden;
   padding-bottom: 10px;
