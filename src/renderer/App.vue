@@ -621,7 +621,7 @@ onBeforeUnmount(() => {
   border-radius: 10px;
   overflow: hidden;
   background: #e7fbfb;
-  box-shadow: 0 0 0 1px rgba(10, 161, 158, 0.14), 0 10px 22px rgba(10, 161, 158, 0.12);
+  /* box-shadow: 0 0 0 1px rgba(10, 161, 158, 0.14), 0 10px 22px rgba(10, 161, 158, 0.12); */
 }
 
 .brand__mark img {
@@ -736,7 +736,7 @@ onBeforeUnmount(() => {
 .assumptions li,
 .section-head small,
 .drawer__head p {
-  color: #57606a;
+  color: #1f2328;
 }
 
 .eyebrow {
@@ -754,17 +754,17 @@ onBeforeUnmount(() => {
 
 .hero__meta div {
   min-width: 0;
-  border-left: 1px solid rgba(87, 96, 106, 0.18);
+  border-left: 1px solid rgba(87, 96, 106, 1);
   background: transparent;
   padding: 3px 10px;
-  opacity: 0.72;
+  /* opacity: 0.72; */
 }
 
 .hero__meta strong {
   display: block;
   font-size: 13px;
   line-height: 1.15;
-  color: #57606a;
+  color: #1f2328;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -775,7 +775,7 @@ onBeforeUnmount(() => {
   margin-top: 3px;
   font-size: 10px;
   line-height: 1.2;
-  color: #8c959f;
+  color: #1f2328;
 }
 
 .hero__actions {
@@ -799,11 +799,6 @@ onBeforeUnmount(() => {
 
 .hero__actions .button--primary {
   min-width: 138px;
-  box-shadow: 0 10px 22px rgba(10, 161, 158, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.22);
-}
-
-.hero__actions .button--light {
-  box-shadow: 0 1px 2px rgba(31, 35, 40, 0.06);
 }
 
 .panel__head,
@@ -1037,29 +1032,6 @@ onBeforeUnmount(() => {
 .button:disabled {
   opacity: 0.72;
   cursor: wait;
-}
-
-.hero__actions .button:hover:not(:disabled) {
-  transform: translate3d(0, -1px, 0);
-}
-
-.hero__actions .button--primary:hover:not(:disabled) {
-  box-shadow: 0 13px 28px rgba(10, 161, 158, 0.26), inset 0 1px 0 rgba(255, 255, 255, 0.24);
-}
-
-.hero__actions .button--light:hover:not(:disabled) {
-  border-color: #bcc7d1;
-  box-shadow: 0 8px 18px rgba(31, 35, 40, 0.1);
-}
-
-.hero__actions .button:active:not(:disabled) {
-  transform: translate3d(0, 0, 0);
-  box-shadow: inset 0 2px 5px rgba(31, 35, 40, 0.14);
-}
-
-.hero__actions .button:focus-visible {
-  outline: 0;
-  box-shadow: 0 0 0 3px rgba(10, 161, 158, 0.18), 0 0 0 1px var(--accent);
 }
 
 .icon-button {
