@@ -67,7 +67,7 @@ export default defineComponent({
       <span>{{ activeLabel }}</span>
       <i class="ri-arrow-down-s-line" />
     </button>
-    <div v-if="open" class="select-menu">
+    <div v-if="open" v-simplebar class="select-menu">
       <button
         v-for="option in options"
         :key="option.value"
@@ -111,12 +111,28 @@ export default defineComponent({
 .select-menu {
   position: absolute;
   inset: calc(100% + 6px) 0 auto 0;
+  max-height: 220px;
   border: 1px solid #d0d7de;
   background: #fff;
   border-radius: 6px;
   box-shadow: 0 12px 28px rgba(31, 35, 40, 0.12);
   overflow: hidden;
   z-index: 20;
+}
+
+.select-menu :deep(.simplebar-content) {
+  display: grid;
+}
+
+.select-menu :deep(.simplebar-track.simplebar-vertical) {
+  width: 8px;
+}
+
+.select-menu :deep(.simplebar-scrollbar::before) {
+  inset: 2px;
+  border-radius: 999px;
+  background: #8c959f;
+  opacity: 0.68;
 }
 
 .select-option {

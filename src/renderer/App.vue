@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import CustomSelect from './components/CustomSelect.vue'
 import PathField from './components/PathField.vue'
 import brandIconUrl from '../../build/icons/favicon-256x256.png'
@@ -35,6 +35,7 @@ const defaultPaths = reactive<Partial<SelectedPaths>>({})
 const closeBehavior = ref<AppPreferences['closeBehavior']>('tray')
 const focusJournalOrder = ref<string[]>([...DEFAULT_FOCUS_JOURNAL_ORDER])
 const forceAeStaffInput = ref('')
+const forceAeStaffTextarea = ref<HTMLTextAreaElement | null>(null)
 const summaryOverrides = reactive<SummaryOverrides>({ ...DEFAULT_SUMMARY_OVERRIDES })
 const running = ref(false)
 const settingsOpen = ref(false)
@@ -103,7 +104,19 @@ function parseForceAeStaff(value: string): string[] {
 function formatForceAeStaff(): string[] {
   const names = parseForceAeStaff(forceAeStaffInput.value)
   forceAeStaffInput.value = names.join('\n')
+  resizeForceAeStaffTextarea()
   return names
+}
+
+function resizeForceAeStaffTextarea(): void {
+  window.requestAnimationFrame(() => {
+    const element = forceAeStaffTextarea.value
+    if (!element) {
+      return
+    }
+    element.style.height = 'auto'
+    element.style.height = `${Math.max(112, element.scrollHeight)}px`
+  })
 }
 
 function pushToast(text: string, tone: Toast['tone'] = 'info'): void {
@@ -130,6 +143,7 @@ function applyPreferences(preferences: AppPreferences): void {
     ...DEFAULT_SUMMARY_OVERRIDES,
     ...(preferences.summaryOverrides ?? {})
   })
+  void nextTick(resizeForceAeStaffTextarea)
 }
 
 async function pickPath(key: keyof SelectedPaths, title: string, filters: Array<{ name: string; extensions: string[] }>): Promise<void> {
@@ -238,6 +252,8 @@ onMounted(async () => {
   Object.assign(windowState, await window.electronApi.getWindowState())
   const preferences = await window.electronApi.getPreferences()
   applyPreferences(preferences)
+  await nextTick()
+  resizeForceAeStaffTextarea()
   unlisten = window.electronApi.onPipelineProgress((event) => {
     logs.value = [...logs.value, event]
   })
@@ -350,7 +366,7 @@ onBeforeUnmount(() => {
             <span>处理日志</span>
             <small>逐步反馈执行进度</small>
           </header>
-          <div class="log-list">
+          <div v-simplebar class="log-list">
             <div v-if="logs.length === 0" class="empty">还没开始运行，先把输入文件选好。</div>
             <div v-for="(entry, index) in logs" :key="index" class="log-item" :class="entry.level">
               <div class="log-item__dot" />
@@ -368,7 +384,7 @@ onBeforeUnmount(() => {
             <small>生成后可直接定位</small>
           </header>
           <div v-if="!result" class="empty">这里会显示生成后的工作簿和 PPT。</div>
-          <div v-else class="result-stack">
+          <div v-else v-simplebar class="result-stack">
             <div class="result-card">
               <div class="result-card__body">
                 <strong>月会数据</strong>
@@ -422,7 +438,7 @@ onBeforeUnmount(() => {
           </button>
         </header>
 
-        <div class="drawer__body">
+        <div v-simplebar class="drawer__body">
           <section class="drawer-section">
             <label class="field">
               <span>关闭行为</span>
@@ -451,9 +467,11 @@ onBeforeUnmount(() => {
             <label class="field field--textarea">
               <span>Section Managing Editor 转入 AE</span>
               <textarea
+                ref="forceAeStaffTextarea"
                 v-model="forceAeStaffInput"
                 placeholder="例如&#10;Dawn Shao&#10;Mike Liu"
                 spellcheck="false"
+                @input="resizeForceAeStaffTextarea"
                 @blur="formatForceAeStaff"
               />
             </label>
@@ -546,41 +564,35 @@ onBeforeUnmount(() => {
   font: inherit;
 }
 
-:global(*::-webkit-scrollbar) {
-  width: 10px;
-  height: 10px;
-}
-
-:global(*::-webkit-scrollbar-track) {
-  background: transparent;
-}
-
-:global(*::-webkit-scrollbar-thumb) {
-  border: 2px solid transparent;
-  border-radius: 999px;
-  background: #c1c7d0;
-  background-clip: padding-box;
-}
-
-:global(*::-webkit-scrollbar-thumb:hover) {
-  background: #98a2ad;
-  background-clip: padding-box;
-}
-
-:global(*) {
-  scrollbar-width: thin;
-  scrollbar-color: #c1c7d0 transparent;
-}
-
 .app-shell {
   --accent: #0aa19e;
   --accent-strong: hsla(179, 88%, 34%, 0.86);
+  --titlebar-height: 50px;
   min-height: 100vh;
   background: #f6f8fa;
 }
 
+.app-shell :deep(.simplebar-track.simplebar-vertical) {
+  width: 10px;
+}
+
+.app-shell :deep(.simplebar-track.simplebar-horizontal) {
+  height: 10px;
+}
+
+.app-shell :deep(.simplebar-scrollbar::before) {
+  inset: 2px;
+  border-radius: 999px;
+  background: #8c959f;
+  opacity: 0.62;
+}
+
+.app-shell :deep(.simplebar-scrollbar.simplebar-visible::before) {
+  opacity: 0.86;
+}
+
 .topbar {
-  height: 50px;
+  height: var(--titlebar-height);
   padding: 0 14px;
   border-bottom: 1px solid #d0d7de;
   background: #0d1117;
@@ -664,7 +676,7 @@ onBeforeUnmount(() => {
 }
 
 .workspace {
-  height: calc(100vh - 56px);
+  height: calc(100vh - var(--titlebar-height));
   padding: 12px;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
@@ -799,7 +811,11 @@ onBeforeUnmount(() => {
   min-height: 0;
   min-width: 0;
   max-height: 100%;
-  overflow: auto;
+  overflow: hidden;
+}
+
+.log-list :deep(.simplebar-content),
+.result-stack :deep(.simplebar-content) {
   display: grid;
   gap: 8px;
   align-content: start;
@@ -995,17 +1011,17 @@ onBeforeUnmount(() => {
 
 .drawer-backdrop {
   position: fixed;
-  inset: 0;
+  inset: var(--titlebar-height) 0 0 0;
   background: rgba(13, 17, 23, 0.34);
   z-index: 50;
 }
 
 .drawer {
   position: fixed;
-  top: 0;
+  top: var(--titlebar-height);
   right: 0;
   width: min(396px, 100vw);
-  height: 100vh;
+  height: calc(100vh - var(--titlebar-height));
   background: #ffffff;
   border-left: 1px solid #d0d7de;
   z-index: 60;
@@ -1025,7 +1041,7 @@ onBeforeUnmount(() => {
 
 .drawer__body {
   min-height: 0;
-  overflow: auto;
+  overflow: hidden;
   padding-bottom: 10px;
 }
 
@@ -1068,10 +1084,9 @@ onBeforeUnmount(() => {
 }
 
 .field textarea {
-  min-height: 96px;
-  max-height: 160px;
+  min-height: 112px;
   resize: vertical;
-  overflow: auto;
+  overflow: hidden;
   white-space: pre-wrap;
 }
 
