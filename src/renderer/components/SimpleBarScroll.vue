@@ -96,3 +96,15 @@ onBeforeUnmount(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.simplebar-content {
+  padding-right: var(--simplebar-content-gutter, 0) !important;
+}
+
+.simplebar-content.simplebar-stack {
+  display: grid;
+  gap: var(--simplebar-content-gap, 0);
+  align-content: start;
+}
+</style>

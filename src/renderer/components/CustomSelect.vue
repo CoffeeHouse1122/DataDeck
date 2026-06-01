@@ -71,7 +71,7 @@ export default defineComponent({
       <span>{{ activeLabel }}</span>
       <i class="ri-arrow-down-s-line" />
     </button>
-    <SimpleBarScroll v-if="open" class="select-menu" :scrollbar-min-size="24">
+    <SimpleBarScroll v-if="open" class="select-menu" content-class="simplebar-stack" :scrollbar-min-size="24">
       <button
         v-for="option in options"
         :key="option.value"
@@ -113,6 +113,7 @@ export default defineComponent({
 }
 
 .select-menu {
+  --simplebar-content-gutter: 10px;
   position: absolute;
   inset: calc(100% + 6px) 0 auto 0;
   max-height: 220px;
@@ -122,10 +123,6 @@ export default defineComponent({
   box-shadow: 0 12px 28px rgba(31, 35, 40, 0.12);
   overflow: hidden;
   z-index: 20;
-}
-
-.select-menu :deep(.simplebar-content) {
-  display: grid;
 }
 
 .select-menu :deep(.simplebar-track.simplebar-vertical) {

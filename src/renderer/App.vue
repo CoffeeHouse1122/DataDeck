@@ -367,7 +367,7 @@ onBeforeUnmount(() => {
               <span>处理日志</span>
               <small>逐步反馈执行进度</small>
             </header>
-            <SimpleBarScroll class="log-list">
+            <SimpleBarScroll class="log-list" content-class="simplebar-stack">
               <div v-if="logs.length === 0" class="empty">还没开始运行，先把输入文件选好。</div>
               <div v-for="(entry, index) in logs" :key="index" class="log-item" :class="entry.level">
                 <div class="log-item__dot" />
@@ -385,7 +385,7 @@ onBeforeUnmount(() => {
               <small>生成后可直接定位</small>
             </header>
             <div v-if="!result" class="empty">这里会显示生成后的工作簿和 PPT。</div>
-            <SimpleBarScroll v-else class="result-stack">
+            <SimpleBarScroll v-else class="result-stack" content-class="simplebar-stack">
               <div class="result-card">
                 <div class="result-card__body">
                   <strong>月会数据</strong>
@@ -834,16 +834,16 @@ onBeforeUnmount(() => {
 
 .log-list,
 .result-stack {
+  --simplebar-content-gap: 8px;
+  --simplebar-content-gutter: 14px;
   flex: 1 1 0;
   min-height: 0;
   min-width: 0;
 }
 
-.log-list :deep(.simplebar-content),
-.result-stack :deep(.simplebar-content) {
-  display: grid;
-  gap: 8px;
-  align-content: start;
+.log-list :deep(.simplebar-track.simplebar-vertical),
+.result-stack :deep(.simplebar-track.simplebar-vertical) {
+  right: 0;
 }
 
 .log-item {
@@ -1065,9 +1065,14 @@ onBeforeUnmount(() => {
 }
 
 .drawer__body {
+  --simplebar-content-gutter: 14px;
   height: 100%;
   min-height: 0;
   padding-bottom: 10px;
+}
+
+.drawer__body :deep(.simplebar-track.simplebar-vertical) {
+  right: 0;
 }
 
 .drawer-section {
