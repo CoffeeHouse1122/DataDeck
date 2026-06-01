@@ -265,17 +265,6 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="topbar__actions">
-        <button type="button" class="button button--subtle" @click="settingsOpen = true">
-          <i class="ri-settings-3-line" />
-          <span>偏好设置</span>
-        </button>
-        <button type="button" class="button button--primary" :disabled="running" @click="run">
-          <i :class="running ? 'ri-loader-4-line spin' : 'ri-play-circle-line'" />
-          <span>{{ running ? '处理中…' : '生成月会文件' }}</span>
-        </button>
-      </div>
-
       <div class="window-controls">
         <button type="button" class="titlebar-button" title="刷新" @click="refreshWindow">
           <i class="ri-refresh-line" />
@@ -308,11 +297,6 @@ onBeforeUnmount(() => {
 
     <main class="workspace">
       <section class="hero panel">
-        <div class="hero__copy">
-          <!-- <span class="eyebrow">GitHub-style desktop workflow</span> -->
-          <h1>把 MR、模板和输出步骤，收成一个能直接交付的桌面流程。</h1>
-          <p>程序会整理 Excel、计算完成率、更新重点刊趋势，并复制 PPT 模板生成结果文件。</p>
-        </div>
         <div class="hero__meta">
           <div>
             <strong>{{ result?.detected.reportKey ?? '----' }}</strong>
@@ -326,6 +310,16 @@ onBeforeUnmount(() => {
             <strong>{{ missingFields.length === 0 ? 'Ready' : `${missingFields.length} Missing` }}</strong>
             <span>输入状态</span>
           </div>
+        </div>
+        <div class="hero__actions">
+          <button type="button" class="button button--subtle button--light" @click="settingsOpen = true">
+            <i class="ri-settings-3-line" />
+            <span>偏好设置</span>
+          </button>
+          <button type="button" class="button button--primary" :disabled="running" @click="run">
+            <i :class="running ? 'ri-loader-4-line spin' : 'ri-play-circle-line'" />
+            <span>{{ running ? '处理中…' : '生成月会文件' }}</span>
+          </button>
         </div>
       </section>
 
@@ -586,7 +580,7 @@ onBeforeUnmount(() => {
 }
 
 .topbar {
-  height: 56px;
+  height: 50px;
   padding: 0 14px;
   border-bottom: 1px solid #d0d7de;
   background: #0d1117;
@@ -627,19 +621,12 @@ onBeforeUnmount(() => {
   color: #8b949e;
 }
 
-.topbar__actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-left: auto;
-  -webkit-app-region: no-drag;
-}
-
 .window-controls {
   display: flex;
   align-items: center;
   gap: 2px;
   height: 100%;
+  margin-left: auto;
   -webkit-app-region: no-drag;
 }
 
@@ -697,22 +684,10 @@ onBeforeUnmount(() => {
 .hero {
   display: flex;
   justify-content: space-between;
-  gap: 14px;
-  align-items: flex-start;
+  gap: 12px;
+  align-items: center;
 }
 
-.hero__copy {
-  min-width: 0;
-}
-
-.hero h1 {
-  margin: 5px 0 6px;
-  max-width: 580px;
-  font-size: 21px;
-  line-height: 1.18;
-}
-
-.hero p,
 .eyebrow,
 .panel__head small,
 .empty,
@@ -723,17 +698,14 @@ onBeforeUnmount(() => {
   color: #57606a;
 }
 
-.hero p {
-  font-size: 12px;
-}
-
 .eyebrow {
   font-size: 10px;
   font-weight: 700;
 }
 
 .hero__meta {
-  min-width: 230px;
+  flex: 1;
+  min-width: 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
@@ -759,6 +731,14 @@ onBeforeUnmount(() => {
   font-size: 10px;
   line-height: 1.2;
   color: #57606a;
+}
+
+.hero__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: none;
 }
 
 .panel__head,
@@ -975,6 +955,16 @@ onBeforeUnmount(() => {
   background: #161b22;
   color: #c9d1d9;
   border-color: #30363d;
+}
+
+.button--light {
+  background: #f6f8fa;
+  color: #1f2328;
+  border-color: #d0d7de;
+}
+
+.button--light:hover:not(:disabled) {
+  background: #eef2f6;
 }
 
 .button:disabled {
