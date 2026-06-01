@@ -98,8 +98,16 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.simplebar-content-wrapper {
+  overflow-x: hidden !important;
+}
+
 .simplebar-content {
   padding-right: var(--simplebar-content-gutter, 0) !important;
+}
+
+:deep(.simplebar-track.simplebar-horizontal) {
+  display: none;
 }
 
 .simplebar-content.simplebar-stack {
