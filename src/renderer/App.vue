@@ -271,16 +271,6 @@ onBeforeUnmount(() => {
 <template>
   <div class="app-shell">
     <header class="topbar">
-      <div class="brand">
-        <div class="brand__mark">
-          <img :src="brandIconUrl" alt="" />
-        </div>
-        <div>
-          <strong>DataDeck</strong>
-          <p>数据整理与月会文件生成</p>
-        </div>
-      </div>
-
       <div class="window-controls">
         <button type="button" class="titlebar-button" title="刷新" @click="refreshWindow">
           <i class="ri-refresh-line" />
@@ -311,116 +301,127 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <main class="workspace">
-      <section class="hero panel">
-        <div class="hero__meta">
-          <div>
-            <strong>{{ result?.detected.reportKey ?? '----' }}</strong>
-            <span>Report Key</span>
-          </div>
-          <div>
-            <strong>{{ result?.detected.reportMonthLabel ?? '--' }}</strong>
-            <span>月份标识</span>
-          </div>
-          <div>
-            <strong>{{ missingFields.length === 0 ? 'Ready' : `${missingFields.length} Missing` }}</strong>
-            <span>输入状态</span>
-          </div>
-        </div>
-        <div class="hero__actions">
-          <button type="button" class="button button--subtle button--light" @click="settingsOpen = true">
-            <i class="ri-settings-3-line" />
-            <span>偏好设置</span>
-          </button>
-          <button type="button" class="button button--primary" :disabled="running" @click="run">
-            <i :class="running ? 'ri-loader-4-line spin' : 'ri-play-circle-line'" />
-            <span>{{ running ? '处理中…' : '生成月会文件' }}</span>
-          </button>
-        </div>
-      </section>
-
-      <section class="panel">
-        <header class="panel__head">
-          <span>输入文件</span>
-          <small>路径会自动记住</small>
-        </header>
-        <div class="path-grid">
-          <PathField
-            v-for="item in pathFields"
-            :key="item.key"
-            :label="item.label"
-            :description="item.description"
-            :value="paths[item.key]"
-            :default-value="defaultPaths[item.key] ?? ''"
-            icon="ri-file-list-3-line"
-            @pick="handlePick(item)"
-            @reveal="handleReveal(item.key)"
-            @reset="handleReset(item.key)"
-          />
-        </div>
-      </section>
-
-      <section class="content-grid">
-        <section class="panel">
-          <header class="panel__head">
-            <span>处理日志</span>
-            <small>逐步反馈执行进度</small>
-          </header>
-          <div v-simplebar class="log-list">
-            <div v-if="logs.length === 0" class="empty">还没开始运行，先把输入文件选好。</div>
-            <div v-for="(entry, index) in logs" :key="index" class="log-item" :class="entry.level">
-              <div class="log-item__dot" />
-              <div class="log-item__content">
-                <strong>{{ entry.step }}</strong>
-                <p>{{ entry.message }}</p>
-              </div>
+    <main v-simplebar class="workspace-scroll">
+      <div class="workspace">
+        <section class="hero panel">
+          <div class="brand hero__brand">
+            <div class="brand__mark">
+              <img :src="brandIconUrl" alt="" />
             </div>
+            <div>
+              <strong>DataDeck</strong>
+              <p>数据整理与月会文件生成</p>
+            </div>
+          </div>
+          <div class="hero__meta">
+            <div>
+              <strong>{{ result?.detected.reportKey ?? '----' }}</strong>
+              <span>Report Key</span>
+            </div>
+            <div>
+              <strong>{{ result?.detected.reportMonthLabel ?? '--' }}</strong>
+              <span>月份标识</span>
+            </div>
+            <div>
+              <strong>{{ missingFields.length === 0 ? 'Ready' : `${missingFields.length} Missing` }}</strong>
+              <span>输入状态</span>
+            </div>
+          </div>
+          <div class="hero__actions">
+            <button type="button" class="button button--subtle button--light" @click="settingsOpen = true">
+              <i class="ri-settings-3-line" />
+              <span>偏好设置</span>
+            </button>
+            <button type="button" class="button button--primary" :disabled="running" @click="run">
+              <i :class="running ? 'ri-loader-4-line spin' : 'ri-play-circle-line'" />
+              <span>{{ running ? '处理中…' : '生成月会文件' }}</span>
+            </button>
           </div>
         </section>
 
         <section class="panel">
           <header class="panel__head">
-            <span>输出结果</span>
-            <small>生成后可直接定位</small>
+            <span>输入文件</span>
+            <small>路径会自动记住</small>
           </header>
-          <div v-if="!result" class="empty">这里会显示生成后的工作簿和 PPT。</div>
-          <div v-else v-simplebar class="result-stack">
-            <div class="result-card">
-              <div class="result-card__body">
-                <strong>月会数据</strong>
-                <p>{{ result.outputs.monthlyWorkbook }}</p>
-              </div>
-              <button type="button" class="icon-button" @click="revealOutput(result.outputs.monthlyWorkbook)">
-                <i class="ri-folder-open-line" />
-              </button>
-            </div>
-            <div class="result-card">
-              <div class="result-card__body">
-                <strong>人员数据</strong>
-                <p>{{ result.outputs.staffWorkbook }}</p>
-              </div>
-              <button type="button" class="icon-button" @click="revealOutput(result.outputs.staffWorkbook)">
-                <i class="ri-folder-open-line" />
-              </button>
-            </div>
-            <div class="result-card">
-              <div class="result-card__body">
-                <strong>PPT 成品</strong>
-                <p>{{ result.outputs.presentation }}</p>
-              </div>
-              <button type="button" class="icon-button" @click="revealOutput(result.outputs.presentation)">
-                <i class="ri-folder-open-line" />
-              </button>
-            </div>
-            <div class="assumptions">
-              <strong>当前实现假设</strong>
-              <ul>
-                <li v-for="item in result.assumptions" :key="item">{{ item }}</li>
-              </ul>
-            </div>
+          <div class="path-grid">
+            <PathField
+              v-for="item in pathFields"
+              :key="item.key"
+              :label="item.label"
+              :description="item.description"
+              :value="paths[item.key]"
+              :default-value="defaultPaths[item.key] ?? ''"
+              icon="ri-file-list-3-line"
+              @pick="handlePick(item)"
+              @reveal="handleReveal(item.key)"
+              @reset="handleReset(item.key)"
+            />
           </div>
         </section>
-      </section>
+
+        <section class="content-grid">
+          <section class="panel">
+            <header class="panel__head">
+              <span>处理日志</span>
+              <small>逐步反馈执行进度</small>
+            </header>
+            <div v-simplebar class="log-list">
+              <div v-if="logs.length === 0" class="empty">还没开始运行，先把输入文件选好。</div>
+              <div v-for="(entry, index) in logs" :key="index" class="log-item" :class="entry.level">
+                <div class="log-item__dot" />
+                <div class="log-item__content">
+                  <strong>{{ entry.step }}</strong>
+                  <p>{{ entry.message }}</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel">
+            <header class="panel__head">
+              <span>输出结果</span>
+              <small>生成后可直接定位</small>
+            </header>
+            <div v-if="!result" class="empty">这里会显示生成后的工作簿和 PPT。</div>
+            <div v-else v-simplebar class="result-stack">
+              <div class="result-card">
+                <div class="result-card__body">
+                  <strong>月会数据</strong>
+                  <p>{{ result.outputs.monthlyWorkbook }}</p>
+                </div>
+                <button type="button" class="icon-button" @click="revealOutput(result.outputs.monthlyWorkbook)">
+                  <i class="ri-folder-open-line" />
+                </button>
+              </div>
+              <div class="result-card">
+                <div class="result-card__body">
+                  <strong>人员数据</strong>
+                  <p>{{ result.outputs.staffWorkbook }}</p>
+                </div>
+                <button type="button" class="icon-button" @click="revealOutput(result.outputs.staffWorkbook)">
+                  <i class="ri-folder-open-line" />
+                </button>
+              </div>
+              <div class="result-card">
+                <div class="result-card__body">
+                  <strong>PPT 成品</strong>
+                  <p>{{ result.outputs.presentation }}</p>
+                </div>
+                <button type="button" class="icon-button" @click="revealOutput(result.outputs.presentation)">
+                  <i class="ri-folder-open-line" />
+                </button>
+              </div>
+              <div class="assumptions">
+                <strong>当前实现假设</strong>
+                <ul>
+                  <li v-for="item in result.assumptions" :key="item">{{ item }}</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+        </section>
+      </div>
     </main>
 
     <transition name="drawer-fade">
@@ -567,8 +568,10 @@ onBeforeUnmount(() => {
 .app-shell {
   --accent: #0aa19e;
   --accent-strong: hsla(179, 88%, 34%, 0.86);
-  --titlebar-height: 50px;
-  min-height: 100vh;
+  --titlebar-bg: #f1f4f8;
+  --titlebar-height: 38px;
+  height: 100vh;
+  overflow: hidden;
   background: #f6f8fa;
 }
 
@@ -593,14 +596,13 @@ onBeforeUnmount(() => {
 
 .topbar {
   height: var(--titlebar-height);
-  padding: 0 14px;
-  border-bottom: 1px solid #d0d7de;
-  background: #0d1117;
-  color: #f0f6fc;
+  padding: 0 8px;
+  border-bottom: 1px solid #d8dee4;
+  background: var(--titlebar-bg);
+  color: #57606a;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: flex-end;
   user-select: none;
   -webkit-app-region: drag;
 }
@@ -608,16 +610,17 @@ onBeforeUnmount(() => {
 .brand {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
+  min-width: 0;
 }
 
 .brand__mark {
-  width: 30px;
-  height: 30px;
-  border-radius: 7px;
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
   overflow: hidden;
-  background: #0d1117;
-  box-shadow: 0 0 0 1px rgba(240, 246, 252, 0.12);
+  background: #e7fbfb;
+  box-shadow: 0 0 0 1px rgba(10, 161, 158, 0.14), 0 10px 22px rgba(10, 161, 158, 0.12);
 }
 
 .brand__mark img {
@@ -629,8 +632,8 @@ onBeforeUnmount(() => {
 
 .brand p {
   margin: 2px 0 0;
-  font-size: 10px;
-  color: #8b949e;
+  font-size: 11px;
+  color: #57606a;
 }
 
 .window-controls {
@@ -643,12 +646,12 @@ onBeforeUnmount(() => {
 }
 
 .titlebar-button {
-  width: 34px;
-  height: 32px;
+  width: 32px;
+  height: 28px;
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #c9d1d9;
+  color: #57606a;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -662,12 +665,12 @@ onBeforeUnmount(() => {
 
 .titlebar-button:hover,
 .titlebar-button.active {
-  background: #21262d;
-  color: #ffffff;
+  background: #dfe7ef;
+  color: #1f2328;
 }
 
 .titlebar-button.active {
-  color: #7ee7e4;
+  color: #087f7c;
 }
 
 .titlebar-button--close:hover {
@@ -675,11 +678,28 @@ onBeforeUnmount(() => {
   color: #ffffff;
 }
 
-.workspace {
+.workspace-scroll {
   height: calc(100vh - var(--titlebar-height));
+  overflow: hidden;
+}
+
+.workspace-scroll > :deep(.simplebar-wrapper),
+.log-list > :deep(.simplebar-wrapper),
+.result-stack > :deep(.simplebar-wrapper),
+.drawer__body > :deep(.simplebar-wrapper) {
+  height: 100%;
+  max-height: 100%;
+}
+
+.workspace-scroll > :deep(.simplebar-wrapper > .simplebar-mask > .simplebar-offset > .simplebar-content-wrapper > .simplebar-content) {
+  min-height: 100%;
+}
+
+.workspace {
+  min-height: calc(100vh - var(--titlebar-height));
   padding: 12px;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 10px;
 }
 
@@ -698,6 +718,17 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   gap: 12px;
   align-items: center;
+}
+
+.hero__brand {
+  flex: 0 0 220px;
+}
+
+.hero__brand strong {
+  display: block;
+  font-size: 18px;
+  line-height: 1.1;
+  color: #1f2328;
 }
 
 .eyebrow,
@@ -791,7 +822,8 @@ onBeforeUnmount(() => {
 }
 
 .content-grid {
-  min-height: 0;
+  flex: 1;
+  min-height: 280px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 360px;
   gap: 10px;
