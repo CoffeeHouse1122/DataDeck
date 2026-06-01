@@ -60,6 +60,11 @@ export interface PipelineResult {
   }
 }
 
+export interface WindowState {
+  isAlwaysOnTop: boolean
+  isMaximized: boolean
+}
+
 export interface FilePickerOptions {
   title: string
   filters: Array<{
@@ -76,6 +81,13 @@ export interface ElectronApi {
   savePreferences(preferences: AppPreferences): Promise<void>
   runPipeline(input: PipelineInput): Promise<PipelineResult>
   revealPath(targetPath: string): Promise<void>
+  refreshWindow(): Promise<void>
+  toggleAlwaysOnTop(): Promise<WindowState>
+  minimizeWindow(): Promise<void>
+  toggleMaximizeWindow(): Promise<WindowState>
+  closeWindow(): Promise<void>
+  getWindowState(): Promise<WindowState>
+  onWindowStateChange(listener: (state: WindowState) => void): () => void
   onPipelineProgress(listener: (event: PipelineProgressEvent) => void): () => void
 }
 

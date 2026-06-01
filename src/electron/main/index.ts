@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
-import type { AppPreferences, FilePickerOptions, PipelineInput, SelectedPaths } from '../../shared/contracts'
+import type { AppPreferences, FilePickerOptions, PipelineInput, SelectedPaths, WindowState } from '../../shared/contracts'
 import { loadPreferences, savePreferences } from './services/settings'
 import { runPipeline } from './services/pipeline'
 
@@ -98,6 +98,17 @@ async function currentPreferences(): Promise<AppPreferences> {
   return cachedPreferences
 }
 
+function getWindowState(): WindowState {
+  return {
+    isAlwaysOnTop: Boolean(mainWindow?.isAlwaysOnTop()),
+    isMaximized: Boolean(mainWindow?.isMaximized())
+  }
+}
+
+function sendWindowState(): void {
+  mainWindow?.webContents.send('window:state-changed', getWindowState())
+}
+
 async function createWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
     width: 1120,
@@ -105,6 +116,7 @@ async function createWindow(): Promise<void> {
     minWidth: 1120,
     minHeight: 720,
     title: 'DataDeck',
+    frame: false,
     icon: windowIconPath(),
     backgroundColor: '#0d1117',
     autoHideMenuBar: true,
@@ -117,7 +129,13 @@ async function createWindow(): Promise<void> {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
+    sendWindowState()
   })
+
+  mainWindow.on('maximize', sendWindowState)
+  mainWindow.on('unmaximize', sendWindowState)
+  mainWindow.on('enter-full-screen', sendWindowState)
+  mainWindow.on('leave-full-screen', sendWindowState)
 
   mainWindow.on('close', async (event) => {
     if (quitting) {
@@ -216,6 +234,37 @@ function registerIpc(): void {
   ipcMain.handle('path:reveal', async (_event, targetPath: string) => {
     shell.showItemInFolder(targetPath)
   })
+
+  ipcMain.handle('window:refresh', () => {
+    mainWindow?.reload()
+  })
+
+  ipcMain.handle('window:toggle-always-on-top', () => {
+    const nextValue = !mainWindow?.isAlwaysOnTop()
+    mainWindow?.setAlwaysOnTop(nextValue)
+    sendWindowState()
+    return getWindowState()
+  })
+
+  ipcMain.handle('window:minimize', () => {
+    mainWindow?.minimize()
+  })
+
+  ipcMain.handle('window:toggle-maximize', () => {
+    if (mainWindow?.isMaximized()) {
+      mainWindow.unmaximize()
+    } else {
+      mainWindow?.maximize()
+    }
+    sendWindowState()
+    return getWindowState()
+  })
+
+  ipcMain.handle('window:close', () => {
+    mainWindow?.close()
+  })
+
+  ipcMain.handle('window:state', () => getWindowState())
 }
 
 const lock = app.requestSingleInstanceLock()

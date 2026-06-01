@@ -12,7 +12,8 @@ import {
   type PipelineProgressEvent,
   type PipelineResult,
   type SelectedPaths,
-  type SummaryOverrides
+  type SummaryOverrides,
+  type WindowState
 } from '../shared/contracts'
 
 type Toast = {
@@ -40,6 +41,10 @@ const settingsOpen = ref(false)
 const logs = ref<PipelineProgressEvent[]>([])
 const result = ref<PipelineResult | null>(null)
 const toasts = ref<Toast[]>([])
+const windowState = reactive<WindowState>({
+  isAlwaysOnTop: false,
+  isMaximized: false
+})
 const pathFields = PATH_FIELD_META
 const closeBehaviorOptions = [
   { label: '关闭到托盘', value: 'tray' },
@@ -48,6 +53,7 @@ const closeBehaviorOptions = [
 
 let toastSeed = 1
 let unlisten: (() => void) | null = null
+let unlistenWindowState: (() => void) | null = null
 
 const missingFields = computed(() =>
   Object.entries(paths)
@@ -180,6 +186,26 @@ async function saveAndCloseSettings(): Promise<void> {
   settingsOpen.value = false
 }
 
+async function refreshWindow(): Promise<void> {
+  await window.electronApi.refreshWindow()
+}
+
+async function toggleAlwaysOnTop(): Promise<void> {
+  Object.assign(windowState, await window.electronApi.toggleAlwaysOnTop())
+}
+
+async function minimizeWindow(): Promise<void> {
+  await window.electronApi.minimizeWindow()
+}
+
+async function toggleMaximizeWindow(): Promise<void> {
+  Object.assign(windowState, await window.electronApi.toggleMaximizeWindow())
+}
+
+async function closeWindow(): Promise<void> {
+  await window.electronApi.closeWindow()
+}
+
 async function run(): Promise<void> {
   if (missingFields.value.length) {
     pushToast('还有输入文件没选完，先把路径补齐。', 'error')
@@ -209,15 +235,20 @@ async function run(): Promise<void> {
 
 onMounted(async () => {
   Object.assign(defaultPaths, await window.electronApi.getDefaultPaths())
+  Object.assign(windowState, await window.electronApi.getWindowState())
   const preferences = await window.electronApi.getPreferences()
   applyPreferences(preferences)
   unlisten = window.electronApi.onPipelineProgress((event) => {
     logs.value = [...logs.value, event]
   })
+  unlistenWindowState = window.electronApi.onWindowStateChange((state) => {
+    Object.assign(windowState, state)
+  })
 })
 
 onBeforeUnmount(() => {
   unlisten?.()
+  unlistenWindowState?.()
 })
 </script>
 
@@ -242,6 +273,35 @@ onBeforeUnmount(() => {
         <button type="button" class="button button--primary" :disabled="running" @click="run">
           <i :class="running ? 'ri-loader-4-line spin' : 'ri-play-circle-line'" />
           <span>{{ running ? '处理中…' : '生成月会文件' }}</span>
+        </button>
+      </div>
+
+      <div class="window-controls">
+        <button type="button" class="titlebar-button" title="刷新" @click="refreshWindow">
+          <i class="ri-refresh-line" />
+        </button>
+        <button
+          type="button"
+          class="titlebar-button"
+          :class="{ active: windowState.isAlwaysOnTop }"
+          :title="windowState.isAlwaysOnTop ? '取消置顶' : '窗口置顶'"
+          @click="toggleAlwaysOnTop"
+        >
+          <i :class="windowState.isAlwaysOnTop ? 'ri-pushpin-2-fill' : 'ri-pushpin-line'" />
+        </button>
+        <button type="button" class="titlebar-button" title="最小化" @click="minimizeWindow">
+          <i class="ri-subtract-line" />
+        </button>
+        <button
+          type="button"
+          class="titlebar-button"
+          :title="windowState.isMaximized ? '还原' : '最大化'"
+          @click="toggleMaximizeWindow"
+        >
+          <i :class="windowState.isMaximized ? 'ri-checkbox-multiple-blank-line' : 'ri-checkbox-blank-line'" />
+        </button>
+        <button type="button" class="titlebar-button titlebar-button--close" title="关闭" @click="closeWindow">
+          <i class="ri-close-line" />
         </button>
       </div>
     </header>
@@ -535,6 +595,8 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  user-select: none;
+  -webkit-app-region: drag;
 }
 
 .brand {
@@ -569,6 +631,49 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin-left: auto;
+  -webkit-app-region: no-drag;
+}
+
+.window-controls {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-button {
+  width: 34px;
+  height: 32px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #c9d1d9;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-button i {
+  font-size: 16px;
+}
+
+.titlebar-button:hover,
+.titlebar-button.active {
+  background: #21262d;
+  color: #ffffff;
+}
+
+.titlebar-button.active {
+  color: #7ee7e4;
+}
+
+.titlebar-button--close:hover {
+  background: #da3633;
+  color: #ffffff;
 }
 
 .workspace {
@@ -846,6 +951,7 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   gap: 7px;
+  -webkit-app-region: no-drag;
 }
 
 .button {
