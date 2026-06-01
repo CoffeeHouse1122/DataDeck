@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import CustomSelect from './components/CustomSelect.vue'
 import PathField from './components/PathField.vue'
+import SimpleBarScroll from './components/SimpleBarScroll.vue'
 import brandIconUrl from '../../build/icons/favicon-256x256.png'
 import { FOCUS_JOURNAL_OPTIONS, PATH_FIELD_META } from '../shared/constants'
 import {
@@ -301,7 +302,7 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <main v-simplebar class="workspace-scroll">
+    <SimpleBarScroll class="workspace-scroll">
       <div class="workspace">
         <section class="hero panel">
           <div class="brand hero__brand">
@@ -366,7 +367,7 @@ onBeforeUnmount(() => {
               <span>处理日志</span>
               <small>逐步反馈执行进度</small>
             </header>
-            <div v-simplebar class="log-list">
+            <SimpleBarScroll class="log-list">
               <div v-if="logs.length === 0" class="empty">还没开始运行，先把输入文件选好。</div>
               <div v-for="(entry, index) in logs" :key="index" class="log-item" :class="entry.level">
                 <div class="log-item__dot" />
@@ -375,7 +376,7 @@ onBeforeUnmount(() => {
                   <p>{{ entry.message }}</p>
                 </div>
               </div>
-            </div>
+            </SimpleBarScroll>
           </section>
 
           <section class="panel">
@@ -384,7 +385,7 @@ onBeforeUnmount(() => {
               <small>生成后可直接定位</small>
             </header>
             <div v-if="!result" class="empty">这里会显示生成后的工作簿和 PPT。</div>
-            <div v-else v-simplebar class="result-stack">
+            <SimpleBarScroll v-else class="result-stack">
               <div class="result-card">
                 <div class="result-card__body">
                   <strong>月会数据</strong>
@@ -418,11 +419,11 @@ onBeforeUnmount(() => {
                   <li v-for="item in result.assumptions" :key="item">{{ item }}</li>
                 </ul>
               </div>
-            </div>
+            </SimpleBarScroll>
           </section>
         </section>
       </div>
-    </main>
+    </SimpleBarScroll>
 
     <transition name="drawer-fade">
       <div v-if="settingsOpen" class="drawer-backdrop" @click="settingsOpen = false" />
@@ -439,7 +440,7 @@ onBeforeUnmount(() => {
           </button>
         </header>
 
-        <div v-simplebar class="drawer__body">
+        <SimpleBarScroll class="drawer__body">
           <section class="drawer-section">
             <label class="field">
               <span>关闭行为</span>
@@ -518,7 +519,7 @@ onBeforeUnmount(() => {
               </label>
             </div>
           </section>
-        </div>
+        </SimpleBarScroll>
 
         <footer class="drawer__foot">
           <button type="button" class="button button--subtle" @click="settingsOpen = false">
@@ -692,11 +693,13 @@ onBeforeUnmount(() => {
 }
 
 .workspace-scroll > :deep(.simplebar-wrapper > .simplebar-mask > .simplebar-offset > .simplebar-content-wrapper > .simplebar-content) {
+  height: 100%;
   min-height: 100%;
 }
 
 .workspace {
-  min-height: calc(100vh - var(--titlebar-height));
+  height: 100%;
+  min-height: 100%;
   padding: 12px;
   display: flex;
   flex-direction: column;

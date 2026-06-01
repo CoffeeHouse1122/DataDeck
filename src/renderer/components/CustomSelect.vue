@@ -1,5 +1,6 @@
 <script lang="ts">
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, type PropType } from 'vue'
+import SimpleBarScroll from './SimpleBarScroll.vue'
 
 type Option = {
   label: string
@@ -8,6 +9,9 @@ type Option = {
 
 export default defineComponent({
   name: 'CustomSelect',
+  components: {
+    SimpleBarScroll
+  },
   props: {
     modelValue: {
       type: String,
@@ -67,7 +71,7 @@ export default defineComponent({
       <span>{{ activeLabel }}</span>
       <i class="ri-arrow-down-s-line" />
     </button>
-    <div v-if="open" v-simplebar class="select-menu">
+    <SimpleBarScroll v-if="open" class="select-menu" :scrollbar-min-size="24">
       <button
         v-for="option in options"
         :key="option.value"
@@ -79,7 +83,7 @@ export default defineComponent({
         <span>{{ option.label }}</span>
         <i v-if="option.value === modelValue" class="ri-check-line" />
       </button>
-    </div>
+    </SimpleBarScroll>
   </div>
 </template>
 
