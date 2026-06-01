@@ -569,7 +569,7 @@ onBeforeUnmount(() => {
 .app-shell {
   --accent: #0aa19e;
   --accent-strong: hsla(179, 88%, 34%, 0.86);
-  --titlebar-bg: #f1f4f8;
+  --titlebar-bg: rgb(242, 244, 247);
   --titlebar-height: 38px;
   height: 100vh;
   overflow: hidden;
@@ -600,7 +600,7 @@ onBeforeUnmount(() => {
   padding: 0 8px;
   border-bottom: 1px solid #d8dee4;
   background: var(--titlebar-bg);
-  color: #57606a;
+  color: #fff;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -1130,9 +1130,21 @@ onBeforeUnmount(() => {
   background: #fff;
   color: #1f2328;
   border-radius: 6px;
-  padding: 9px 10px;
-  line-height: 1.2;
+  padding: 4px 10px;
+  line-height: 1.5;
 }
+
+.field input::placeholder,
+.field textarea::placeholder {
+  color: #8c959f;
+  font-size: 14px;
+}
+
+.field input:focus,
+.field textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+} 
 
 .field textarea {
   min-height: 112px;
