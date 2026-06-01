@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
+import fs from 'node:fs'
 import path from 'node:path'
 import type { AppPreferences, FilePickerOptions, PipelineInput, SelectedPaths } from '../../shared/contracts'
 import { loadPreferences, savePreferences } from './services/settings'
@@ -8,6 +9,9 @@ let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let quitting = false
 let cachedPreferences: AppPreferences | null = null
+let cachedAppIcon: Electron.NativeImage | null = null
+
+const APP_ICON_SIZES = [16, 32, 48, 64, 128, 192, 256, 512]
 
 function stringifyError(error: unknown): string {
   if (error instanceof Error) {
@@ -23,12 +27,7 @@ function stringifyError(error: unknown): string {
   }
 }
 
-function createTrayIcon(): Electron.NativeImage {
-  const icon = nativeImage.createFromPath(appIconPath('favicon.ico'))
-  if (!icon.isEmpty()) {
-    return icon
-  }
-
+function createFallbackIcon(): Electron.NativeImage {
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
       <rect width="32" height="32" rx="7" fill="#0d1117"/>
@@ -39,10 +38,42 @@ function createTrayIcon(): Electron.NativeImage {
   return nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`)
 }
 
+function addIconRepresentation(icon: Electron.NativeImage, fileName: string, size: number): void {
+  const iconPath = appIconPath(fileName)
+  if (!fs.existsSync(iconPath)) {
+    return
+  }
+
+  const dataUrl = `data:image/png;base64,${fs.readFileSync(iconPath).toString('base64')}`
+  icon.addRepresentation({
+    dataURL: dataUrl,
+    height: size,
+    width: size
+  })
+}
+
+function createAppIcon(): Electron.NativeImage {
+  if (cachedAppIcon && !cachedAppIcon.isEmpty()) {
+    return cachedAppIcon
+  }
+
+  const icon = nativeImage.createFromPath(appIconPath('favicon.ico'))
+  for (const size of APP_ICON_SIZES) {
+    addIconRepresentation(icon, `favicon-${size}x${size}.png`, size)
+  }
+
+  cachedAppIcon = icon.isEmpty() ? createFallbackIcon() : icon
+  return cachedAppIcon
+}
+
 function appIconPath(fileName: string): string {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'icons', fileName)
     : path.join(process.cwd(), 'build', 'icons', fileName)
+}
+
+function windowIconPath(): string {
+  return appIconPath('favicon.ico')
 }
 
 function templatePath(fileName: string): string {
@@ -74,7 +105,7 @@ async function createWindow(): Promise<void> {
     minWidth: 1120,
     minHeight: 720,
     title: 'DataDeck',
-    icon: appIconPath('favicon.ico'),
+    icon: windowIconPath(),
     backgroundColor: '#0d1117',
     autoHideMenuBar: true,
     webPreferences: {
@@ -82,6 +113,7 @@ async function createWindow(): Promise<void> {
       sandbox: false
     }
   })
+  mainWindow.setIcon(windowIconPath())
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
@@ -111,7 +143,7 @@ async function createWindow(): Promise<void> {
 }
 
 function createTray(): void {
-  tray = new Tray(createTrayIcon())
+  tray = new Tray(createAppIcon())
   tray.setToolTip('DataDeck')
   tray.on('double-click', () => {
     mainWindow?.show()

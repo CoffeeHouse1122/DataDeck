@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import CustomSelect from './components/CustomSelect.vue'
 import PathField from './components/PathField.vue'
+import brandIconUrl from '../../build/icons/favicon-256x256.png'
 import { FOCUS_JOURNAL_OPTIONS, PATH_FIELD_META } from '../shared/constants'
 import {
   DEFAULT_FOCUS_JOURNAL_ORDER,
@@ -224,7 +225,9 @@ onBeforeUnmount(() => {
   <div class="app-shell">
     <header class="topbar">
       <div class="brand">
-        <div class="brand__mark">D</div>
+        <div class="brand__mark">
+          <img :src="brandIconUrl" alt="" />
+        </div>
         <div>
           <strong>DataDeck</strong>
           <p>数据整理与月会文件生成</p>
@@ -466,8 +469,8 @@ onBeforeUnmount(() => {
 
 <style scoped>
 @font-face {
-  font-family: SourceHanSansCN;
-  src: url('./assets/SourceHanSansCN-Regular.woff2') format('woff2');
+  font-family: NotoSansSC;
+  src: url('./assets/NotoSansSC-Regular.woff2') format('woff2');
   font-weight: 400;
 }
 
@@ -477,7 +480,7 @@ onBeforeUnmount(() => {
 
 :global(body) {
   margin: 0;
-  font-family: SourceHanSansCN, 'Segoe UI', sans-serif;
+  font-family: NotoSansSC, 'Segoe UI', sans-serif;
   line-height: 1.2;
   background: #0d1117;
   color: #1f2328;
@@ -516,6 +519,8 @@ onBeforeUnmount(() => {
 }
 
 .app-shell {
+  --accent: #0aa19e;
+  --accent-strong: hsla(179, 88%, 34%, 0.86);
   min-height: 100vh;
   background: #f6f8fa;
 }
@@ -542,11 +547,16 @@ onBeforeUnmount(() => {
   width: 30px;
   height: 30px;
   border-radius: 7px;
-  display: grid;
-  place-items: center;
-  background: #238636;
-  font-size: 13px;
-  font-weight: 700;
+  overflow: hidden;
+  background: #0d1117;
+  box-shadow: 0 0 0 1px rgba(240, 246, 252, 0.12);
+}
+
+.brand__mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .brand p {
@@ -846,8 +856,13 @@ onBeforeUnmount(() => {
 }
 
 .button--primary {
-  background: #238636;
+  background: var(--accent);
+  border-color: var(--accent-strong);
   color: #fff;
+}
+
+.button--primary:hover:not(:disabled) {
+  background: var(--accent-strong);
 }
 
 .button--subtle {
@@ -979,35 +994,98 @@ onBeforeUnmount(() => {
 
 .toast-wrap {
   position: fixed;
-  right: 12px;
-  bottom: 12px;
+  right: 18px;
+  bottom: 18px;
   display: grid;
-  gap: 8px;
+  gap: 10px;
   z-index: 80;
 }
 
 .toast {
-  min-width: 220px;
-  max-width: 340px;
-  padding: 9px 11px;
+  position: relative;
+  min-width: 280px;
+  max-width: min(420px, calc(100vw - 36px));
+  padding: 12px 14px 12px 16px;
   border-radius: 8px;
-  border: 1px solid #d0d7de;
-  background: #fff;
+  border: 1px solid #8c959f;
+  background: #ffffff;
   color: #1f2328;
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  line-height: 1.3;
-  box-shadow: 0 12px 28px rgba(31, 35, 40, 0.14);
+  gap: 10px;
+  font-size: 12px;
+  line-height: 1.35;
+  font-weight: 700;
+  box-shadow: 0 18px 44px rgba(31, 35, 40, 0.22), 0 0 0 1px rgba(31, 35, 40, 0.04);
+}
+
+.toast::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  border-radius: 8px 0 0 8px;
+  background: #57606a;
+}
+
+.toast i {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  font-size: 17px;
+  background: #f6f8fa;
+  color: #57606a;
+}
+
+.toast span {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .toast.success {
-  border-color: #1a7f37;
+  border-color: #0aa19e;
+  background: #f0fffd;
+}
+
+.toast.success::before {
+  background: var(--accent);
+}
+
+.toast.success i {
+  background: rgba(10, 161, 158, 0.12);
+  color: #087f7c;
 }
 
 .toast.error {
   border-color: #cf222e;
+  background: #fff5f5;
+}
+
+.toast.error::before {
+  background: #cf222e;
+}
+
+.toast.error i {
+  background: rgba(207, 34, 46, 0.1);
+  color: #cf222e;
+}
+
+.toast.info {
+  border-color: #2f81f7;
+  background: #f1f8ff;
+}
+
+.toast.info::before {
+  background: #2f81f7;
+}
+
+.toast.info i {
+  background: rgba(47, 129, 247, 0.12);
+  color: #2f81f7;
 }
 
 .spin {

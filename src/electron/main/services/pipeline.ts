@@ -411,6 +411,33 @@ function nextRelationshipId(relationships: Array<Record<string, string>>): strin
   return `rId${Date.now()}`
 }
 
+function zipDirName(pathName: string): string {
+  const index = pathName.lastIndexOf('/')
+  return index === -1 ? '' : pathName.slice(0, index)
+}
+
+function normalizeZipPath(pathName: string): string {
+  const parts: string[] = []
+  for (const part of pathName.replace(/\\/g, '/').split('/')) {
+    if (!part || part === '.') {
+      continue
+    }
+    if (part === '..') {
+      parts.pop()
+      continue
+    }
+    parts.push(part)
+  }
+  return parts.join('/')
+}
+
+function resolveZipTarget(ownerPath: string, target: string): string {
+  if (target.startsWith('/')) {
+    return normalizeZipPath(target.slice(1))
+  }
+  return normalizeZipPath(`${zipDirName(ownerPath)}/${target}`)
+}
+
 function escapeXml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -443,6 +470,57 @@ function replaceNthChartCache(serXml: string, cacheTag: 'strCache' | 'numCache',
 
 function chartFormulaSheetName(sheetName: string): string {
   return sheetName.includes(' ') ? `'${sheetName.replace(/'/g, "''")}'` : sheetName
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function chartXmlMatchesSheet(xml: string, sheetName: string): boolean {
+  const formulaSheetName = chartFormulaSheetName(sheetName)
+  return xml.includes(`${sheetName}!$`) || xml.includes(`${formulaSheetName}!$`) || xml.includes(`${escapeXml(formulaSheetName)}!$`)
+}
+
+function chartHeaderRowIndex(xml: string, sheetName: string): number {
+  const formulaSheetName = chartFormulaSheetName(sheetName)
+  const sheetPattern = `(?:${escapeRegExp(sheetName)}|${escapeRegExp(formulaSheetName)}|${escapeRegExp(escapeXml(formulaSheetName))})`
+  const match = xml.match(new RegExp(`${sheetPattern}!\\$[A-Z]+\\$(\\d+)`))
+  return Number(match?.[1] ?? 1)
+}
+
+const DEPARTMENT_SHEET_NAME = '科室数据'
+
+async function worksheetChartTargets(zip: JSZip, worksheetPath: string | undefined): Promise<string[]> {
+  if (!worksheetPath) {
+    return []
+  }
+
+  const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' })
+  const sheetXml = await zipText(zip, worksheetPath)
+  const drawingRelId = sheetXml.match(/<drawing\b[^>]*r:id="([^"]+)"[^>]*\/>/)?.[1]
+  if (!drawingRelId) {
+    return []
+  }
+
+  const sheetRelsPath = worksheetPath.replace('xl/worksheets/', 'xl/worksheets/_rels/') + '.rels'
+  const sheetRelsXml = parser.parse(await zipText(zip, sheetRelsPath))
+  const drawingRel = arrayOf<Record<string, string>>(sheetRelsXml.Relationships?.Relationship)
+    .find((rel) => rel['@_Id'] === drawingRelId)
+  if (!drawingRel?.['@_Target']) {
+    return []
+  }
+
+  const drawingPath = resolveZipTarget(worksheetPath, drawingRel['@_Target'])
+  const drawingRelsPath = drawingPath.replace('xl/drawings/', 'xl/drawings/_rels/') + '.rels'
+  const drawingRelsText = await zipText(zip, drawingRelsPath)
+  if (!drawingRelsText) {
+    return []
+  }
+
+  const drawingRelsXml = parser.parse(drawingRelsText)
+  return arrayOf<Record<string, string>>(drawingRelsXml.Relationships?.Relationship)
+    .filter((rel) => String(rel['@_Type'] ?? '').endsWith('/chart') && rel['@_Target'])
+    .map((rel) => resolveZipTarget(drawingPath, rel['@_Target']))
 }
 
 function replaceFocusChartFormulae(serXml: string, sheetName: string, monthIndex: number, headerRowIndex: number, metricCount: number): string {
@@ -507,11 +585,10 @@ function patchFocusWorkbookCharts(outputZip: JSZip, focusSeries: FocusJournalSer
 
     outputZip.file(file.name, file.async('text').then((xml) => {
       for (const [sheetName, series] of seriesBySheet.entries()) {
-        if (!xml.includes(`${sheetName}!$`)) {
+        if (!chartXmlMatchesSheet(xml, sheetName)) {
           continue
         }
-        const headerMatch = xml.match(new RegExp(`${sheetName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}!\\$[A-Z]+\\$(\\d+)`))
-        const headerRowIndex = Number(headerMatch?.[1] ?? 1)
+        const headerRowIndex = chartHeaderRowIndex(xml, sheetName)
         if (headerRowIndex === 1) {
           return updateFocusWorkbookChartXml(xml, sheetName, series.primaryMonths, series.primaryMetrics, 1)
         }
@@ -519,6 +596,36 @@ function patchFocusWorkbookCharts(outputZip: JSZip, focusSeries: FocusJournalSer
       }
       return xml
     }))
+  }
+}
+
+async function validateFocusWorkbookCharts(outputZip: JSZip, focusSeries: FocusJournalSeries[]): Promise<void> {
+  const chartFiles = Object.values(outputZip.files).filter((file) =>
+    !file.dir && file.name.startsWith('xl/charts/') && file.name.endsWith('.xml')
+  )
+  const chartXmls = await Promise.all(chartFiles.map(async (file) => ({
+    name: file.name,
+    xml: await file.async('text')
+  })))
+
+  for (const series of focusSeries) {
+    const expectedMonths = Array.from(new Set([...series.primaryMonths, ...series.secondaryMonths].filter(Boolean)))
+    if (!expectedMonths.length) {
+      continue
+    }
+
+    const matchedXml = chartXmls
+      .filter((chart) => chartXmlMatchesSheet(chart.xml, series.sheetName))
+      .map((chart) => chart.xml)
+      .join('\n')
+    if (!matchedXml) {
+      throw new Error(`Missing workbook chart for ${series.displayName}`)
+    }
+
+    const missingMonths = expectedMonths.filter((month) => !matchedXml.includes(`<c:v>${escapeXml(month)}</c:v>`))
+    if (missingMonths.length) {
+      throw new Error(`Workbook chart for ${series.displayName} is missing month data: ${missingMonths.join(', ')}`)
+    }
   }
 }
 
@@ -536,10 +643,11 @@ function departmentChartMetrics(metrics: DepartmentMetrics): Array<{ label: stri
 
 function replaceDepartmentWorkbookFormulae(serXml: string, rowIndex: number, metricCount: number): string {
   const endColumn = columnLetter(metricCount + 1)
+  const escapedSheet = chartFormulaSheetName(DEPARTMENT_SHEET_NAME)
   const formulae = [
-    `科室数据!$A$${rowIndex}`,
-    `科室数据!$B$1:$${endColumn}$1`,
-    `科室数据!$B$${rowIndex}:$${endColumn}$${rowIndex}`
+    `${escapedSheet}!$A$${rowIndex}`,
+    `${escapedSheet}!$B$1:$${endColumn}$1`,
+    `${escapedSheet}!$B$${rowIndex}:$${endColumn}$${rowIndex}`
   ]
   let index = 0
   return serXml.replace(/<c:f>[\s\S]*?<\/c:f>/g, (match) => {
@@ -594,18 +702,144 @@ function updateDepartmentWorkbookChartXml(xml: string, metrics: DepartmentMetric
   })
 }
 
-function patchDepartmentWorkbookCharts(outputZip: JSZip, metrics: DepartmentMetrics | undefined): void {
+async function patchDepartmentWorkbookCharts(outputZip: JSZip, metrics: DepartmentMetrics | undefined, chartTargets: string[] = []): Promise<void> {
   if (!metrics) {
     return
   }
+
+  const targetSet = new Set(chartTargets)
+  for (const file of Object.values(outputZip.files)) {
+    if (file.dir || !file.name.startsWith('xl/charts/') || !file.name.endsWith('.xml')) {
+      continue
+    }
+    const shouldPatchByTarget = targetSet.has(file.name)
+    const xml = await file.async('text')
+    if (shouldPatchByTarget || chartXmlMatchesSheet(xml, DEPARTMENT_SHEET_NAME)) {
+      outputZip.file(file.name, updateDepartmentWorkbookChartXml(xml, metrics))
+    }
+  }
+}
+
+async function validateDepartmentWorkbookChart(outputZip: JSZip, metrics: DepartmentMetrics | undefined, chartTargets: string[] = []): Promise<void> {
+  if (!metrics?.yearlySeries.length) {
+    return
+  }
+
+  const targetSet = new Set(chartTargets)
+  const chartFiles = Object.values(outputZip.files).filter((file) =>
+    !file.dir && file.name.startsWith('xl/charts/') && file.name.endsWith('.xml')
+  )
+  const chartXmls = await Promise.all(chartFiles.map(async (file) => ({
+    name: file.name,
+    xml: await file.async('text')
+  })))
+  const matchedXml = chartXmls
+    .filter((chart) => targetSet.has(chart.name) || chartXmlMatchesSheet(chart.xml, DEPARTMENT_SHEET_NAME))
+    .map((chart) => chart.xml)
+    .join('\n')
+
+  if (!matchedXml) {
+    throw new Error('Missing workbook chart for 科室数据')
+  }
+
+  const missingMonths = metrics.yearlySeries
+    .map((item) => item.label)
+    .filter((month) => !matchedXml.includes(`<c:v>${escapeXml(month)}</c:v>`))
+  if (missingMonths.length) {
+    throw new Error(`Workbook chart for 科室数据 is missing month data: ${missingMonths.join(', ')}`)
+  }
+}
+
+async function stripExternalWorkbookReferences(outputZip: JSZip): Promise<void> {
+  const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' })
+  const builder = new XMLBuilder({ ignoreAttributes: false, attributeNamePrefix: '@_', format: false })
+  const chartExternalIds = new Map<string, Set<string>>()
 
   for (const file of Object.values(outputZip.files)) {
     if (file.dir || !file.name.startsWith('xl/charts/') || !file.name.endsWith('.xml')) {
       continue
     }
-    outputZip.file(file.name, file.async('text').then((xml) => (
-      xml.includes('科室数据!$') ? updateDepartmentWorkbookChartXml(xml, metrics) : xml
-    )))
+    const externalIds = new Set<string>()
+    const xml = await file.async('text')
+    const nextXml = xml
+      .replace(/<c:externalData\b[^>]*r:id="([^"]+)"[^>]*>[\s\S]*?<\/c:externalData>/g, (_match, relId: string) => {
+        externalIds.add(relId)
+        return ''
+      })
+      .replace(/<c:externalData\b[^>]*r:id="([^"]+)"[^>]*\/>/g, (_match, relId: string) => {
+        externalIds.add(relId)
+        return ''
+      })
+    if (nextXml !== xml) {
+      outputZip.file(file.name, nextXml)
+      chartExternalIds.set(file.name, externalIds)
+    }
+  }
+
+  for (const [chartPath, externalIds] of chartExternalIds.entries()) {
+    const relPath = chartPath.replace('xl/charts/', 'xl/charts/_rels/') + '.rels'
+    const relText = await zipText(outputZip, relPath)
+    if (!relText) {
+      continue
+    }
+    const relsXml = parser.parse(relText)
+    const relationships = arrayOf<Record<string, string>>(relsXml.Relationships?.Relationship).filter((rel) =>
+      !externalIds.has(rel['@_Id']) && rel['@_TargetMode'] !== 'External'
+    )
+    relsXml.Relationships.Relationship = relationships
+    outputZip.file(relPath, builder.build(relsXml))
+  }
+
+  const workbookXml = await zipText(outputZip, 'xl/workbook.xml')
+  if (workbookXml.includes('<externalReferences')) {
+    outputZip.file('xl/workbook.xml', workbookXml.replace(/<externalReferences>[\s\S]*?<\/externalReferences>/g, ''))
+  }
+
+  const workbookRelsText = await zipText(outputZip, 'xl/_rels/workbook.xml.rels')
+  if (workbookRelsText) {
+    const relsXml = parser.parse(workbookRelsText)
+    relsXml.Relationships.Relationship = arrayOf<Record<string, string>>(relsXml.Relationships?.Relationship).filter((rel) =>
+      !String(rel['@_Type'] ?? '').includes('/externalLink') &&
+      !String(rel['@_Target'] ?? '').includes('externalLinks/')
+    )
+    outputZip.file('xl/_rels/workbook.xml.rels', builder.build(relsXml))
+  }
+
+  const contentTypesText = await zipText(outputZip, '[Content_Types].xml')
+  if (contentTypesText) {
+    const contentTypes = parser.parse(contentTypesText)
+    contentTypes.Types.Override = arrayOf<Record<string, string>>(contentTypes.Types?.Override).filter((override) =>
+      !String(override['@_PartName'] ?? '').startsWith('/xl/externalLinks/')
+    )
+    outputZip.file('[Content_Types].xml', builder.build(contentTypes))
+  }
+
+  for (const fileName of Object.keys(outputZip.files)) {
+    if (fileName.startsWith('xl/externalLinks/')) {
+      outputZip.remove(fileName)
+    }
+  }
+}
+
+async function validateNoExternalWorkbookReferences(outputZip: JSZip): Promise<void> {
+  const externalParts = Object.keys(outputZip.files).filter((fileName) => fileName.startsWith('xl/externalLinks/'))
+  if (externalParts.length) {
+    throw new Error(`Generated workbook still contains external link parts: ${externalParts.join(', ')}`)
+  }
+
+  const workbookXml = await zipText(outputZip, 'xl/workbook.xml')
+  if (workbookXml.includes('<externalReferences')) {
+    throw new Error('Generated workbook still contains external workbook references')
+  }
+
+  for (const file of Object.values(outputZip.files)) {
+    if (file.dir || !file.name.endsWith('.xml') && !file.name.endsWith('.rels')) {
+      continue
+    }
+    const xml = await file.async('text')
+    if (xml.includes('<c:externalData') || xml.includes('TargetMode="External"')) {
+      throw new Error(`Generated workbook still contains external chart data: ${file.name}`)
+    }
   }
 }
 
@@ -699,7 +933,13 @@ async function preserveTemplateCharts(
     outputZip.file(outputSheetPath, xmlWithDrawing)
   }
 
-  // Keep workbook chart XML intact; invalid chart XML makes Office repair the file and drop data.
+  const departmentChartTargets = await worksheetChartTargets(outputZip, outputSheets.get(DEPARTMENT_SHEET_NAME))
+  patchFocusWorkbookCharts(outputZip, focusSeries)
+  await patchDepartmentWorkbookCharts(outputZip, departmentMetrics, departmentChartTargets)
+  await stripExternalWorkbookReferences(outputZip)
+  await validateNoExternalWorkbookReferences(outputZip)
+  await validateFocusWorkbookCharts(outputZip, focusSeries)
+  await validateDepartmentWorkbookChart(outputZip, departmentMetrics, departmentChartTargets)
   await fs.writeFile(outputPath, await outputZip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' }))
 }
 
@@ -1184,6 +1424,24 @@ function departmentRowHasValues(sheet: ExcelJS.Worksheet, rowIndex: number): boo
   return false
 }
 
+function ensureDepartmentMonthRow(sheet: ExcelJS.Worksheet, label: string): number {
+  for (let rowIndex = 2; rowIndex <= sheet.rowCount; rowIndex += 1) {
+    if (normalizeText(sheet.getCell(rowIndex, 1).value) === label) {
+      return rowIndex
+    }
+  }
+
+  const targetRowIndex = sheet.rowCount + 1
+  const templateRow = sheet.getRow(Math.max(2, Math.min(sheet.rowCount, 13)))
+  const targetRow = sheet.getRow(targetRowIndex)
+  targetRow.height = templateRow.height
+  for (let col = 1; col <= 8; col += 1) {
+    copyStyle(templateRow.getCell(col), targetRow.getCell(col))
+  }
+  sheet.getCell(targetRowIndex, 1).value = label
+  return targetRowIndex
+}
+
 function syncDepartmentMetricsFromSheet(sheet: ExcelJS.Worksheet, rowIndex: number, metrics: DepartmentMetrics): void {
   const currentPublication = toInteger(normalizeNumber(sheet.getCell(rowIndex, 2).value))
   const currentSubmission = toInteger(normalizeNumber(sheet.getCell(rowIndex, 3).value))
@@ -1216,25 +1474,10 @@ function syncDepartmentMetricsFromSheet(sheet: ExcelJS.Worksheet, rowIndex: numb
 function populateDepartmentSheet(sheet: ExcelJS.Worksheet, metrics: DepartmentMetrics, context: ReportContext): void {
   leftAlignHeaderRow(sheet.getRow(1), Math.max(sheet.getRow(1).cellCount, 8))
   const targetLabel = metrics.reportMonthCellLabel
-  let targetRowIndex = -1
-  for (let rowIndex = 2; rowIndex <= sheet.rowCount; rowIndex += 1) {
-    const label = normalizeText(sheet.getCell(rowIndex, 1).value)
-    if (label === targetLabel) {
-      targetRowIndex = rowIndex
-      break
-    }
+  for (const label of context.comparisonMonthLabels) {
+    ensureDepartmentMonthRow(sheet, label)
   }
-
-  if (targetRowIndex === -1) {
-    targetRowIndex = sheet.rowCount + 1
-    const templateRow = sheet.getRow(Math.max(2, Math.min(sheet.rowCount, 13)))
-    const targetRow = sheet.getRow(targetRowIndex)
-    targetRow.height = templateRow.height
-    for (let col = 1; col <= 8; col += 1) {
-      copyStyle(templateRow.getCell(col), targetRow.getCell(col))
-    }
-    sheet.getCell(targetRowIndex, 1).value = targetLabel
-  }
+  const targetRowIndex = ensureDepartmentMonthRow(sheet, targetLabel)
 
   const row = sheet.getRow(targetRowIndex)
   row.getCell(2).value = metrics.publication
@@ -1995,7 +2238,7 @@ function styleStaffSheet(sheet: ExcelJS.Worksheet, headers: string[], rowCount: 
   const headerRow = sheet.getRow(1)
   headerRow.height = 22
   headerRow.eachCell((cell) => {
-    cell.font = { name: 'Source Han Sans CN', bold: true, color: { argb: 'FFFFFFFF' }, size: 10 }
+    cell.font = { name: 'Noto Sans SC', bold: true, color: { argb: 'FFFFFFFF' }, size: 10 }
     cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true }
     cell.fill = solidFill('24292F')
     cell.border = { bottom: { style: 'thin', color: { argb: 'FFD0D7DE' } } }
@@ -2007,7 +2250,7 @@ function styleStaffSheet(sheet: ExcelJS.Worksheet, headers: string[], rowCount: 
   for (let rowIndex = 2; rowIndex <= rowCount + 1; rowIndex += 1) {
     const row = sheet.getRow(rowIndex)
     row.eachCell((cell) => {
-      cell.font = { name: 'Source Han Sans CN', size: 10 }
+      cell.font = { name: 'Noto Sans SC', size: 10 }
       cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: false }
       cell.border = { bottom: { style: 'thin', color: { argb: 'FFD8DEE4' } } }
     })
@@ -2027,7 +2270,7 @@ function applyStaffJournalBackgrounds(sheet: ExcelJS.Worksheet, rows: GenericRow
     cell.fill = solidFill(fillColor)
     cell.font = {
       ...(cell.font ?? {}),
-      name: 'Source Han Sans CN',
+      name: 'Noto Sans SC',
       size: 10,
       bold: true,
       color: { argb: 'FFFFFFFF' }

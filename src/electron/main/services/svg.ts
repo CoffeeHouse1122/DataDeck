@@ -205,7 +205,7 @@ export function renderWorksheetRangeSvg(sheet: ExcelJS.Worksheet, options: Works
         body += `<rect x="${x + 4}" y="${y + 5}" width="${barWidth}" height="${Math.max(4, rowHeight - 10)}" fill="${overlay.dataBarColor ?? '#638EC6'}" opacity="0.58" />`
       }
       if (value) {
-        body += `<text x="${textX}" y="${textY}" fill="${cellFontColor(cell)}" font-family="Arial, Source Han Sans CN, sans-serif" font-size="${fontSize}" font-weight="${weight}" text-anchor="${anchor}">${escapeXml(value)}</text>`
+        body += `<text x="${textX}" y="${textY}" fill="${cellFontColor(cell)}" font-family="Noto Sans SC, Arial, sans-serif" font-size="${fontSize}" font-weight="${weight}" text-anchor="${anchor}">${escapeXml(value)}</text>`
       }
       x += colWidth
     }
@@ -227,7 +227,7 @@ export function renderWorksheetRangeSvg(sheet: ExcelJS.Worksheet, options: Works
     const overlay = options.cellOverlay?.(cell, merge.startRow, merge.col)
     body += `<rect x="${x}" y="${startY}" width="${colWidth}" height="${mergeHeight}" fill="${overlay?.background ?? cellFill(cell)}" stroke="${options.gridStrokeColor ?? borderColor(cell)}" stroke-width="${options.gridStrokeWidth ?? 1}" />`
     if (value) {
-      body += `<text x="${x + colWidth / 2}" y="${startY + mergeHeight / 2 + fontSize * 0.34}" fill="${cellFontColor(cell)}" font-family="Arial, Source Han Sans CN, sans-serif" font-size="${fontSize}" font-weight="${options.forceBold || cell.font?.bold ? 700 : 400}" text-anchor="middle">${escapeXml(value)}</text>`
+      body += `<text x="${x + colWidth / 2}" y="${startY + mergeHeight / 2 + fontSize * 0.34}" fill="${cellFontColor(cell)}" font-family="Noto Sans SC, Arial, sans-serif" font-size="${fontSize}" font-weight="${options.forceBold || cell.font?.bold ? 700 : 400}" text-anchor="middle">${escapeXml(value)}</text>`
     }
   }
 
