@@ -202,8 +202,9 @@ function updateTitleSlide(xml: string, reportMonthTitle: string): string {
 }
 
 function cacheXml(values: Array<string | number>, stringValues: boolean): string {
+  // Keep the same precision as Edit Data; integer labels are a display format only.
   const points = values.map((value, index) =>
-    `<c:pt idx="${index}"><c:v>${stringValues ? escapeXml(String(value)) : Math.round(Number(value) || 0)}</c:v></c:pt>`
+    `<c:pt idx="${index}"><c:v>${stringValues ? escapeXml(String(value)) : Number(value) || 0}</c:v></c:pt>`
   ).join('')
   return `<c:ptCount val="${values.length}"/>${points}`
 }
@@ -217,12 +218,16 @@ function replaceNthCache(serXml: string, cacheTag: 'strCache' | 'numCache', occu
       return match
     }
     seen += 1
-    return `<c:${cacheTag}>${cacheXml(values, stringValues)}</c:${cacheTag}>`
+    const format = cacheTag === 'numCache' ? '<c:formatCode>0</c:formatCode>' : ''
+    return `<c:${cacheTag}>${format}${cacheXml(values, stringValues)}</c:${cacheTag}>`
   })
 }
 
-function setSeriesDataLabelFontSize(serXml: string, size: number): string {
-  return serXml.replace(/<a:defRPr([^>]*)sz="\d+"/g, `<a:defRPr$1sz="${size}"`)
+function setSeriesDataLabelStyle(serXml: string, size: number): string {
+  // Do not inherit General from the workbook when PowerPoint refreshes the chart.
+  return serXml
+    .replace(/<a:defRPr([^>]*)sz="\d+"/g, `<a:defRPr$1sz="${size}"`)
+    .replace(/<c:numFmt\b[^>]*\/>/g, '<c:numFmt formatCode="0" sourceLinked="0"/>')
 }
 
 function replaceSerFormulae(serXml: string, sheetName: string, monthIndex: number, metricCount: number): string {
@@ -264,7 +269,7 @@ function updateChartXml(xml: string, sheetName: string, months: string[], metric
     serXml = replaceNthCache(serXml, 'strCache', 0, [month], true)
     serXml = replaceNthCache(serXml, 'strCache', 1, labels, true)
     serXml = replaceNthCache(serXml, 'numCache', 0, values, false)
-    serXml = setSeriesDataLabelFontSize(serXml, index === usableMonths.length - 1 ? 1500 : compactLabelSize)
+    serXml = setSeriesDataLabelStyle(serXml, index === usableMonths.length - 1 ? 1500 : compactLabelSize)
     return replaceSerFormulae(serXml, sheetName, index, labels.length)
   }).join('')
 
@@ -317,7 +322,7 @@ function updateDepartmentChartXml(xml: string, months: string[], metrics: Array<
     serXml = replaceNthCache(serXml, 'strCache', 0, [month], true)
     serXml = replaceNthCache(serXml, 'strCache', 1, labels, true)
     serXml = replaceNthCache(serXml, 'numCache', 0, values, false)
-    serXml = setSeriesDataLabelFontSize(serXml, index === usableMonths.length - 1 ? 1500 : compactLabelSize)
+    serXml = setSeriesDataLabelStyle(serXml, index === usableMonths.length - 1 ? 1500 : compactLabelSize)
     return replaceDepartmentSerFormulae(serXml, index, labels.length)
   }).join('')
 

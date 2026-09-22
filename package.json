@@ -6,6 +6,7 @@
   "main": "dist-electron/main/index.js",
   "type": "module",
   "scripts": {
+    "test:ppt": "node scripts/ppt-regression.mjs",
     "dev": "electron-vite dev --watch --outDir dist-electron",
     "build": "vue-tsc --noEmit && electron-vite build --outDir dist-electron",
     "preview": "electron-vite preview --outDir dist-electron",
