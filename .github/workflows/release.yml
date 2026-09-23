@@ -35,9 +35,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Verify stable release tag
-        env:
-          GITHUB_REF_NAME: ${{ env.RELEASE_TAG }}
-        run: node scripts/verify-release.mjs --tag
+        run: >-
+          node --input-type=module -e "import fs from 'node:fs'; import { verifyTag } from './scripts/verify-release.mjs'; verifyTag(JSON.parse(fs.readFileSync('package.json', 'utf8')).version, process.env.RELEASE_TAG);"
       - name: Test updater and resource isolation
         run: |
           npm run test:updater
