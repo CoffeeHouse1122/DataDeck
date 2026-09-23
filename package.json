@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "test:ppt": "node scripts/ppt-regression.mjs",
+    "test:resources": "node scripts/private-resources-regression.mjs",
     "dev": "electron-vite dev --watch --outDir dist-electron",
     "build": "vue-tsc --noEmit && electron-vite build --outDir dist-electron",
     "preview": "electron-vite preview --outDir dist-electron",
@@ -41,30 +42,16 @@
     },
     "artifactName": "${productName}-${version}-Setup.${ext}",
     "files": [
-      "dist/**",
       "dist-electron/**",
-      "package.json"
+      "package.json",
+      "!**/*.{xlsx,xls,xlsm,xlsb,pptx,ppt,pptm,docx,doc,docm}",
+      "!dist-electron/**/templates/**",
+      "!private-business-data/**"
     ],
     "extraResources": [
       {
         "from": "build/icons",
         "to": "icons"
-      },
-      {
-        "from": "docs/monthly-data-generated-202603.xlsx",
-        "to": "templates/monthly-data-generated-202603.xlsx"
-      },
-      {
-        "from": "docs/staff-data-generated-202603.xlsx",
-        "to": "templates/staff-data-generated-202603.xlsx"
-      },
-      {
-        "from": "docs/editors-journals.xlsx",
-        "to": "templates/editors-journals.xlsx"
-      },
-      {
-        "from": "docs/Section Health月会.pptx",
-        "to": "templates/Section Health月会.pptx"
       }
     ],
     "win": {

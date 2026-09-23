@@ -27,3 +27,4 @@ pnpm-debug.log*
 /docs/**/*.webp
 /docs/**/*.gif
 /docs/**/*.bmp
+/private-business-data/

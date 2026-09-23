@@ -76,24 +76,26 @@ function windowIconPath(): string {
   return appIconPath('favicon.ico')
 }
 
-function templatePath(fileName: string): string {
+function retiredTemplatePath(fileName: string): string {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'templates', fileName)
     : path.join(process.cwd(), 'docs', fileName)
 }
 
-function defaultTemplatePaths(): Partial<SelectedPaths> {
+// These locations are used only to clear obsolete bundled paths on upgrade.
+// Templates are now selected by the user and never loaded automatically.
+function retiredTemplatePaths(): Partial<SelectedPaths> {
   return {
-    monthlyTemplate: templatePath('monthly-data-generated-202603.xlsx'),
-    staffTemplate: templatePath('staff-data-generated-202603.xlsx'),
-    editorsJournals: templatePath('editors-journals.xlsx'),
-    pptTemplate: templatePath('Section Health月会.pptx')
+    monthlyTemplate: retiredTemplatePath('monthly-data-generated-202603.xlsx'),
+    staffTemplate: retiredTemplatePath('staff-data-generated-202603.xlsx'),
+    editorsJournals: retiredTemplatePath('editors-journals.xlsx'),
+    pptTemplate: retiredTemplatePath('Section Health月会.pptx')
   }
 }
 
 async function currentPreferences(): Promise<AppPreferences> {
   if (!cachedPreferences) {
-    cachedPreferences = await loadPreferences(app.getPath('userData'), defaultTemplatePaths())
+    cachedPreferences = await loadPreferences(app.getPath('userData'), retiredTemplatePaths())
   }
   return cachedPreferences
 }
@@ -208,7 +210,7 @@ function registerIpc(): void {
 
   ipcMain.handle('preferences:get', async () => currentPreferences())
 
-  ipcMain.handle('paths:defaults', async () => defaultTemplatePaths())
+  ipcMain.handle('paths:defaults', async () => ({}))
 
   ipcMain.handle('preferences:save', async (_event, preferences: AppPreferences) => {
     cachedPreferences = preferences

@@ -7,20 +7,31 @@ const SETTINGS_FILE = 'preferences.json'
 const LEGACY_MONTHLY_TEMPLATE = '月会数据.xlsx'
 const LEGACY_STAFF_TEMPLATE = '人员数据.xlsx'
 
-function migrateTemplatePaths(paths: Partial<SelectedPaths>, defaultPaths: Partial<SelectedPaths>): Partial<SelectedPaths> {
+function normalizedPath(value: string): string {
+  const resolved = path.resolve(value)
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved
+}
+
+function migrateTemplatePaths(paths: Partial<SelectedPaths>, retiredPaths: Partial<SelectedPaths>): Partial<SelectedPaths> {
   const migrated = { ...paths }
-  if (migrated.monthlyTemplate && path.basename(migrated.monthlyTemplate) === LEGACY_MONTHLY_TEMPLATE && defaultPaths.monthlyTemplate) {
-    migrated.monthlyTemplate = defaultPaths.monthlyTemplate
-  }
-  if (migrated.staffTemplate && path.basename(migrated.staffTemplate) === LEGACY_STAFF_TEMPLATE && defaultPaths.staffTemplate) {
-    migrated.staffTemplate = defaultPaths.staffTemplate
+  for (const key of ['monthlyTemplate', 'staffTemplate', 'editorsJournals', 'pptTemplate'] as const) {
+    const selected = migrated[key]
+    const retired = retiredPaths[key]
+    if (!selected || !retired) continue
+    const obsoletePaths = [retired]
+    if (key === 'monthlyTemplate') obsoletePaths.push(path.join(path.dirname(retired), LEGACY_MONTHLY_TEMPLATE))
+    if (key === 'staffTemplate') obsoletePaths.push(path.join(path.dirname(retired), LEGACY_STAFF_TEMPLATE))
+    // Match full paths, not just filenames: user-owned copies must remain selected.
+    if (obsoletePaths.some((candidate) => normalizedPath(candidate) === normalizedPath(selected))) {
+      delete migrated[key]
+    }
   }
   return migrated
 }
 
-export function createDefaultPreferences(defaultPaths: Partial<SelectedPaths> = {}): AppPreferences {
+export function createDefaultPreferences(): AppPreferences {
   return {
-    paths: { ...defaultPaths },
+    paths: {},
     closeBehavior: 'tray',
     focusJournalOrder: [...DEFAULT_FOCUS_JOURNAL_ORDER],
     forceAeStaff: [...DEFAULT_FORCE_AE_STAFF],
@@ -28,19 +39,16 @@ export function createDefaultPreferences(defaultPaths: Partial<SelectedPaths> = 
   }
 }
 
-export async function loadPreferences(userDataPath: string, defaultPaths: Partial<SelectedPaths> = {}): Promise<AppPreferences> {
+export async function loadPreferences(userDataPath: string, retiredPaths: Partial<SelectedPaths> = {}): Promise<AppPreferences> {
   const filePath = path.join(userDataPath, SETTINGS_FILE)
 
   try {
     const raw = await fs.readFile(filePath, 'utf8')
     const parsed = JSON.parse(raw) as Partial<AppPreferences>
     return {
-      ...createDefaultPreferences(defaultPaths),
+      ...createDefaultPreferences(),
       ...parsed,
-      paths: migrateTemplatePaths({
-        ...defaultPaths,
-        ...(parsed.paths ?? {})
-      }, defaultPaths),
+      paths: migrateTemplatePaths(parsed.paths ?? {}, retiredPaths),
       focusJournalOrder: parsed.focusJournalOrder?.length ? parsed.focusJournalOrder : [...DEFAULT_FOCUS_JOURNAL_ORDER],
       forceAeStaff: parsed.forceAeStaff?.length ? parsed.forceAeStaff : [...DEFAULT_FORCE_AE_STAFF],
       summaryOverrides: {
@@ -49,7 +57,7 @@ export async function loadPreferences(userDataPath: string, defaultPaths: Partia
       }
     }
   } catch {
-    return createDefaultPreferences(defaultPaths)
+    return createDefaultPreferences()
   }
 }
 
