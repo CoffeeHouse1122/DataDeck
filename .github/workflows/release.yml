@@ -4,12 +4,18 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: '已存在的稳定版本标签，例如 v0.1.4'
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.release_tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -17,8 +23,11 @@ jobs:
     runs-on: windows-2022
     env:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -26,6 +35,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Verify stable release tag
+        env:
+          GITHUB_REF_NAME: ${{ env.RELEASE_TAG }}
         run: node scripts/verify-release.mjs --tag
       - name: Test updater and resource isolation
         run: |
@@ -42,7 +53,8 @@ jobs:
       - name: Upload release draft
         uses: softprops/action-gh-release@v2
         with:
-          name: DataDeck ${{ github.ref_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: DataDeck ${{ env.RELEASE_TAG }}
           draft: true
           generate_release_notes: true
           fail_on_unmatched_files: true
@@ -53,4 +65,4 @@ jobs:
       - name: Publish completed release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release edit "$env:GITHUB_REF_NAME" --draft=false --latest
+        run: gh release edit "$env:RELEASE_TAG" --draft=false --latest
