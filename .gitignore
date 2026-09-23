@@ -28,6 +28,11 @@ pnpm-debug.log*
 /docs/**/*.gif
 /docs/**/*.bmp
 /private-business-data/
+# Local project notes and requirements must never be published.
+/docs/
+/DOCUMENTATION.md
+/HANDOFF.md
+/private-project-notes/
 .env
 .env.*
 *.pfx
