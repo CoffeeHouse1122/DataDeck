@@ -113,8 +113,8 @@ type DepartmentMetrics = {
   publicationDelta: number
   publicationMom: number
   publicationYoy: number | null
-  revenueDelta: number
-  revenueMom: number
+  revenueDelta: number | null
+  revenueMom: number | null
   revenueYoy: number | null
   submissionDelta: number
   submissionMom: number
@@ -946,10 +946,18 @@ async function preserveTemplateCharts(
 function parseReportContext(mrWorkbookPath: string, journalRows: GenericRow[]): ReportContext {
   const sample = journalRows[0] ?? {}
   const quarterPubHeader = Object.keys(sample).find((key) => /\d{6}-\d{6} Pub$/.test(key)) ?? '202601-202603 Pub'
-  const quarterRevenueHeader = Object.keys(sample).find((key) => /\d{6}-\d{6} Revenue$/.test(key)) ?? '202601-202603 Revenue'
   const quarterPreviousPubHeader = Object.keys(sample).find((key) => /\d{6}-\d{6} Pub$/.test(key) && key !== quarterPubHeader)
-  const quarterPreviousRevenueHeader = Object.keys(sample).find((key) => /\d{6}-\d{6} Revenue$/.test(key) && key !== quarterRevenueHeader)
   const reportKey = detectReportKey(mrWorkbookPath, quarterPubHeader)
+  // Revenue property names remain compatible with existing templates/preferences;
+  // actual amounts now come exclusively from Invoice, never from Revenue fallback.
+  const invoiceHeaders = Object.keys(sample).filter((key) => /^\d{6}-\d{6} Invoiced\(CHF\)$/.test(key))
+  const currentInvoiceHeaders = invoiceHeaders.filter((key) => key.slice(7, 13) === reportKey)
+  if (!Object.hasOwn(sample, 'Invoiced sent') || currentInvoiceHeaders.length !== 1) {
+    throw new Error(`MR Journals 必须包含 Invoiced sent 和唯一截至 ${reportKey} 的 YYYYMM-YYYYMM Invoiced(CHF) 字段`)
+  }
+  const quarterRevenueHeader = currentInvoiceHeaders[0]
+  const previousInvoicePeriod = quarterRevenueHeader.replace(/\d{6}/g, (month) => String(Number(month) - 100))
+  const quarterPreviousRevenueHeader = invoiceHeaders.find((key) => key === previousInvoicePeriod)
   const reportMonthLabel = monthLabelFromKey(reportKey)
   const reportMonthTitle = titleMonthFromKey(reportKey)
   const monthNumber = Number.parseInt(reportKey.slice(4, 6), 10) || 1
@@ -1000,7 +1008,7 @@ function buildOfficeRows(journalRows: GenericRow[], context: ReportContext): Off
         publicationTcr: yearlyPublTarget ? quarterPub / yearlyPublTarget : 0,
         revenueTcr: revenueTargetFinal ? quarterRevenue / revenueTargetFinal : 0,
         quarterPub: toInteger(quarterPub),
-        revenue: toInteger(normalizeNumber(row.Revenue)),
+        revenue: toInteger(normalizeNumber(row['Invoiced sent'])),
         quarterRevenue: toInteger(quarterRevenue),
         revenueTargetFinal: toInteger(revenueTargetFinal)
       }
@@ -1375,9 +1383,7 @@ function computeDepartmentMetrics(journalRows: GenericRow[], context: ReportCont
   const submissionLast = toInteger(healthRows.reduce((sum, row) => sum + normalizeNumber(row['Sub/lastM']), 0))
   const assignedManuscript = toInteger(healthRows.reduce((sum, row) => sum + normalizeNumber(row.Processing), 0))
   const siSetUp = toInteger(healthRows.reduce((sum, row) => sum + normalizeNumber(row['New SI']), 0))
-  const revenue = healthRows.reduce((sum, row) => sum + normalizeNumber(row.Revenue), 0) / 10000
-  const revenueLast = healthRows.reduce((sum, row) => sum + normalizeNumber(row['Revenue/LastM']), 0) / 10000
-  const revenueYoySource = healthRows.reduce((sum, row) => sum + normalizeNumber(row['Revenue/YoY']), 0) / 10000
+  const revenue = healthRows.reduce((sum, row) => sum + normalizeNumber(row['Invoiced sent']), 0) / 10000
   const totalPublWeight = Math.max(1, healthRows.reduce((sum, row) => sum + normalizeNumber(row['Publ.']), 0))
   const waiverRate = healthRows.reduce((sum, row) => sum + normalizeNumber(row['Waiver Rate']) * normalizeNumber(row['Publ.']), 0) / totalPublWeight
   const mpt = healthRows.reduce((sum, row) => sum + normalizeNumber(row.MPT) * normalizeNumber(row['Publ.']), 0) / totalPublWeight
@@ -1406,9 +1412,11 @@ function computeDepartmentMetrics(journalRows: GenericRow[], context: ReportCont
     publicationDelta: (overrides.publication ? Number(overrides.publication) : publication) - publicationLast,
     publicationMom: percentageDelta(overrides.publication ? Number(overrides.publication) : publication, publicationLast),
     publicationYoy: publicationYoySource ? percentageDelta(overrides.publication ? Number(overrides.publication) : publication, publicationYoySource) : null,
-    revenueDelta: Number(((overrides.revenueWCHF ? Number(overrides.revenueWCHF) : revenue) - revenueLast).toFixed(2)),
-    revenueMom: percentageDelta(overrides.revenueWCHF ? Number(overrides.revenueWCHF) : revenue, revenueLast),
-    revenueYoy: revenueYoySource ? percentageDelta(overrides.revenueWCHF ? Number(overrides.revenueWCHF) : revenue, revenueYoySource) : null,
+    // Historical template amounts have not been confirmed as Invoice amounts.
+    // Keep them intact, but do not calculate comparisons across accounting bases.
+    revenueDelta: null,
+    revenueMom: null,
+    revenueYoy: null,
     submissionDelta: (overrides.submission ? Number(overrides.submission) : submission) - submissionLast,
     submissionMom: percentageDelta(overrides.submission ? Number(overrides.submission) : submission, submissionLast),
     yearlySeries: currentYearSeries
@@ -1448,7 +1456,6 @@ function syncDepartmentMetricsFromSheet(sheet: ExcelJS.Worksheet, rowIndex: numb
   const currentRevenue = normalizeNumber(sheet.getCell(rowIndex, 6).value)
   const previousPublication = rowIndex > 2 ? toInteger(normalizeNumber(sheet.getCell(rowIndex - 1, 2).value)) : 0
   const previousSubmission = rowIndex > 2 ? toInteger(normalizeNumber(sheet.getCell(rowIndex - 1, 3).value)) : 0
-  const previousRevenue = rowIndex > 2 ? normalizeNumber(sheet.getCell(rowIndex - 1, 6).value) : 0
 
   metrics.publication = currentPublication
   metrics.submission = currentSubmission
@@ -1459,16 +1466,12 @@ function syncDepartmentMetricsFromSheet(sheet: ExcelJS.Worksheet, rowIndex: numb
   metrics.mpt = normalizeNumber(sheet.getCell(rowIndex, 8).value)
   metrics.publicationDelta = currentPublication - previousPublication
   metrics.publicationMom = percentageDelta(currentPublication, previousPublication)
-  metrics.revenueDelta = Number((currentRevenue - previousRevenue).toFixed(2))
-  metrics.revenueMom = percentageDelta(currentRevenue, previousRevenue)
   metrics.submissionDelta = currentSubmission - previousSubmission
   metrics.submissionMom = percentageDelta(currentSubmission, previousSubmission)
 
   const monthIndex = rowIndex - 1
   const previousYearPublication = normalizeNumber(sheet.getCell(20, monthIndex + 1).value)
-  const previousYearRevenue = normalizeNumber(sheet.getCell(21, monthIndex + 1).value)
   metrics.publicationYoy = previousYearPublication ? percentageDelta(currentPublication, previousYearPublication) : metrics.publicationYoy
-  metrics.revenueYoy = previousYearRevenue ? percentageDelta(currentRevenue, previousYearRevenue) : metrics.revenueYoy
 }
 
 function populateDepartmentSheet(sheet: ExcelJS.Worksheet, metrics: DepartmentMetrics, context: ReportContext): void {
@@ -1823,7 +1826,7 @@ function focusMetricValue(row: GenericRow, key: FocusMetricKey): ExcelJS.CellVal
     return normalizeNumber(row.TFD)
   }
   if (key === 'revenue') {
-    return toInteger(normalizeNumber(row.Revenue) / 10000)
+    return toInteger(normalizeNumber(row['Invoiced sent']) / 10000)
   }
   if (key === 'waiverRate') {
     return Number((normalizeRate(row['Waiver Rate']) * 100).toFixed(2))
@@ -3333,6 +3336,7 @@ export async function runPipeline(event: IpcMainInvokeEvent, input: PipelineInpu
     assumptions: [
       'PPT is copied from the Section Health meeting template and patched in place.',
       'Department summary defaults to a Section Health rollup and can be overridden in settings.',
+      'Revenue amount fields use Invoiced sent / Invoiced(CHF); Revenue Target Final is retained. Historical template amounts are preserved and Invoice MoM/YoY are unavailable until their basis is confirmed.',
       'Staff Journal values are mapped from the first-row journal columns in editors-journals.',
       ...(missingJournalStaff.length
         ? [`Missing journal mapping for: ${missingJournalStaff.join(', ')}`]

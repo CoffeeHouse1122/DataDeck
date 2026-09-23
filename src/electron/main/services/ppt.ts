@@ -55,8 +55,8 @@ type DepartmentMetrics = {
   publicationDelta: number
   publicationMom: number
   publicationYoy: number | null
-  revenueDelta: number
-  revenueMom: number
+  revenueDelta: number | null
+  revenueMom: number | null
   revenueYoy: number | null
   submissionDelta: number
   submissionMom: number
@@ -491,7 +491,7 @@ async function updateDepartmentChart(zip: JSZip, metrics: DepartmentMetrics): Pr
 function updateDepartmentTextSlide(xml: string, metrics: DepartmentMetrics): string {
   const replacements = [
     `发文：${numText(metrics.publication)}篇（比上月${signedNumberText(metrics.publicationDelta)}），MoM ${signedPercentText(metrics.publicationMom)}，YoY ${metrics.publicationYoy === null ? '--' : signedPercentText(metrics.publicationYoy)}`,
-    `营收：${metrics.revenueWCHF.toFixed(2)} WCHF（比上月${signedNumberText(metrics.revenueDelta, 2)}W），MoM ${signedPercentText(metrics.revenueMom)}，YoY ${metrics.revenueYoy === null ? '--' : signedPercentText(metrics.revenueYoy)}`,
+    `营收：${metrics.revenueWCHF.toFixed(2)} WCHF（比上月${metrics.revenueDelta === null ? '--' : `${signedNumberText(metrics.revenueDelta, 2)}W`}），MoM ${metrics.revenueMom === null ? '--' : signedPercentText(metrics.revenueMom)}，YoY ${metrics.revenueYoy === null ? '--' : signedPercentText(metrics.revenueYoy)}`,
     `投稿：${numText(metrics.submission)}篇（比上月${signedNumberText(metrics.submissionDelta)}），MoM ${signedPercentText(metrics.submissionMom)}`,
     `特刊上线：${numText(metrics.siSetUp)}`,
     `免费比例：${(metrics.waiverRate * 100).toFixed(2)}%`,

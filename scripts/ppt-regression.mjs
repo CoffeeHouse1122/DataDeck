@@ -204,7 +204,7 @@ async function workbookSnapshot(filename) {
 }
 
 try {
-  const result = await runPipeline({ sender: { send() {} } }, {
+  const pipelineInput = {
     paths: {
       mrWorkbook: path.join(root, 'docs/MR_202603-202603.xlsx'), monthlyTemplate: path.join(root, 'docs/monthly-data-generated-202603.xlsx'),
       staffTemplate: path.join(root, 'docs/staff-data-generated-202603.xlsx'), editorsJournals: path.join(root, 'docs/editors-journals.xlsx'),
@@ -212,7 +212,8 @@ try {
     },
     closeBehavior: 'tray', focusJournalOrder: ['Foods', 'Nutrients', 'Children', 'Genes', 'BS'], forceAeStaff: [],
     summaryOverrides: Object.fromEntries(['reportMonthLabel', ...keys].map((key) => [key, '']))
-  })
+  }
+  const result = await runPipeline({ sender: { send() {} } }, pipelineInput)
   if (process.argv.includes('--record-excel')) {
     console.log(`Excel baseline generated: ${path.dirname(result.outputs.monthlyWorkbook)}`)
   } else {
@@ -227,7 +228,11 @@ try {
     }
     await verifyDeck(result.outputs.presentation)
     console.log('PASS: real March MR, 11 charts and embedded workbooks')
-    for (const month of [1, 3, 4, 5, 12]) {
+    if (process.argv.includes('--invoice-only')) {
+      const { verifyInvoiceSources } = await import('./invoice-regression.mjs')
+      await verifyInvoiceSources({ runPipeline, verifyDeck, workbookSnapshot, input: pipelineInput, result, output })
+    }
+    for (const month of process.argv.includes('--invoice-only') ? [] : [1, 3, 4, 5, 12]) {
       const { input, expectations } = fixture(month)
       await buildPresentation(input)
       await verifyDeck(input.outputPath, expectations)
