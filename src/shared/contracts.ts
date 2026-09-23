@@ -74,6 +74,11 @@ export interface FilePickerOptions {
 }
 
 export interface ElectronApi {
+  getUpdateState(): Promise<AppUpdateState>
+  checkForUpdates(): Promise<AppUpdateState>
+  downloadUpdate(): Promise<AppUpdateState>
+  installUpdate(): Promise<AppUpdateState>
+  onUpdateState(listener: (state: AppUpdateState) => void): () => void
   pickFile(options: FilePickerOptions): Promise<string | null>
   pickDirectory(title: string): Promise<string | null>
   getPreferences(): Promise<AppPreferences>
@@ -89,6 +94,15 @@ export interface ElectronApi {
   getWindowState(): Promise<WindowState>
   onWindowStateChange(listener: (state: WindowState) => void): () => void
   onPipelineProgress(listener: (event: PipelineProgressEvent) => void): () => void
+}
+
+export interface AppUpdateState {
+  phase: 'disabled' | 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'installing' | 'error'
+  currentVersion: string
+  availableVersion?: string
+  percent?: number
+  message: string
+  generationRunning: boolean
 }
 
 declare global {

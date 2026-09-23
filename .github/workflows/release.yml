@@ -1,0 +1,56 @@
+name: Release DataDeck
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    runs-on: windows-2022
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Verify stable release tag
+        run: node scripts/verify-release.mjs --tag
+      - name: Test updater and resource isolation
+        run: |
+          npm run test:updater
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm run test:resources
+      - name: Build application
+        run: npm run build
+      - name: Package unsigned Windows installer
+        run: npx electron-builder --win nsis --x64 --publish never
+      - name: Verify release artifacts and private resource exclusion
+        run: npm run verify:release
+      # Upload everything to a draft before exposing metadata to installed clients.
+      - name: Upload release draft
+        uses: softprops/action-gh-release@v2
+        with:
+          name: DataDeck ${{ github.ref_name }}
+          draft: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release/DataDeck-*-Setup.exe
+            release/DataDeck-*-Setup.exe.blockmap
+            release/latest.yml
+      - name: Publish completed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$env:GITHUB_REF_NAME" --draft=false --latest

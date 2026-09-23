@@ -28,3 +28,8 @@ pnpm-debug.log*
 /docs/**/*.gif
 /docs/**/*.bmp
 /private-business-data/
+.env
+.env.*
+*.pfx
+*.p12
+*.pem

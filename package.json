@@ -1,6 +1,6 @@
 {
   "name": "datadeck",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "description": "Windows desktop app for monthly data processing and PPT generation.",
   "main": "dist-electron/main/index.js",
@@ -8,13 +8,16 @@
   "scripts": {
     "test:ppt": "node scripts/ppt-regression.mjs",
     "test:resources": "node scripts/private-resources-regression.mjs",
+    "test:updater": "node scripts/updater-regression.mjs",
+    "verify:release": "node scripts/verify-release.mjs",
     "dev": "electron-vite dev --watch --outDir dist-electron",
     "build": "vue-tsc --noEmit && electron-vite build --outDir dist-electron",
     "preview": "electron-vite preview --outDir dist-electron",
-    "pack:win": "npm run build && electron-builder --win dir",
-    "dist:win": "npm run build && electron-builder --win nsis"
+    "pack:win": "npm run build && electron-builder --win dir --publish never",
+    "dist:win": "npm run build && electron-builder --win nsis --publish never"
   },
   "dependencies": {
+    "electron-updater": "6.8.9",
     "exceljs": "^4.4.0",
     "fast-xml-parser": "^4.5.3",
     "jszip": "^3.10.1",
@@ -41,6 +44,12 @@
       "output": "release"
     },
     "artifactName": "${productName}-${version}-Setup.${ext}",
+    "publish": {
+      "provider": "github",
+      "owner": "CoffeeHouse1122",
+      "repo": "DataDeck",
+      "private": false
+    },
     "files": [
       "dist-electron/**",
       "package.json",
@@ -55,6 +64,7 @@
       }
     ],
     "win": {
+      "verifyUpdateCodeSignature": false,
       "icon": "build/icons/favicon.ico",
       "target": [
         "nsis"

@@ -1,7 +1,16 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppPreferences, ElectronApi, FilePickerOptions, PipelineInput, PipelineProgressEvent, PipelineResult, WindowState } from '../../shared/contracts'
+import type { AppPreferences, AppUpdateState, ElectronApi, FilePickerOptions, PipelineInput, PipelineProgressEvent, PipelineResult, WindowState } from '../../shared/contracts'
 
 const electronApi: ElectronApi = {
+  getUpdateState: () => ipcRenderer.invoke('update:state'),
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  onUpdateState: (listener: (state: AppUpdateState) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, state: AppUpdateState) => listener(state)
+    ipcRenderer.on('update:state-changed', handler)
+    return () => { ipcRenderer.removeListener('update:state-changed', handler) }
+  },
   pickFile: (options: FilePickerOptions) => ipcRenderer.invoke('pick:file', options),
   pickDirectory: (title: string) => ipcRenderer.invoke('pick:directory', title),
   getPreferences: () => ipcRenderer.invoke('preferences:get') as Promise<AppPreferences>,

@@ -1,15 +1,18 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
+import electronUpdater from 'electron-updater'
 import type { AppPreferences, FilePickerOptions, PipelineInput, SelectedPaths, WindowState } from '../../shared/contracts'
 import { loadPreferences, savePreferences } from './services/settings'
 import { runPipeline } from './services/pipeline'
+import { UpdateController } from './services/updater'
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let quitting = false
 let cachedPreferences: AppPreferences | null = null
 let cachedAppIcon: Electron.NativeImage | null = null
+let updates: UpdateController
 
 const APP_ICON_SIZES = [16, 32, 48, 64, 128, 192, 256, 512]
 
@@ -191,6 +194,10 @@ function createTray(): void {
 }
 
 function registerIpc(): void {
+  ipcMain.handle('update:state', () => updates.getState())
+  ipcMain.handle('update:check', () => updates.check())
+  ipcMain.handle('update:download', () => updates.download())
+  ipcMain.handle('update:install', () => updates.install())
   ipcMain.handle('pick:file', async (_event, options: FilePickerOptions) => {
     const result = await dialog.showOpenDialog(mainWindow!, {
       title: options.title,
@@ -217,7 +224,7 @@ function registerIpc(): void {
     await savePreferences(app.getPath('userData'), preferences)
   })
 
-  ipcMain.handle('pipeline:run', async (event, input: PipelineInput) => {
+  ipcMain.handle('pipeline:run', async (event, input: PipelineInput) => updates.runGeneration(async () => {
     cachedPreferences = {
       paths: input.paths,
       closeBehavior: input.closeBehavior,
@@ -231,7 +238,7 @@ function registerIpc(): void {
     } catch (error) {
       throw new Error(stringifyError(error))
     }
-  })
+  }))
 
   ipcMain.handle('path:reveal', async (_event, targetPath: string) => {
     shell.showItemInFolder(targetPath)
@@ -286,9 +293,15 @@ if (!lock) {
   app.whenReady().then(async () => {
     app.setAppUserModelId('com.zhero.datadeck')
 
+    updates = new UpdateController(electronUpdater.autoUpdater, app.isPackaged && process.platform === 'win32', app.getVersion(), (state) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) window.webContents.send('update:state-changed', state)
+      }
+    }, (value) => { quitting = value })
     registerIpc()
     await createWindow()
     createTray()
+    updates.start()
     globalShortcut.register('CommandOrControl+R', () => {
       if (!app.isPackaged) {
         mainWindow?.reload()
@@ -307,6 +320,7 @@ if (!lock) {
   })
 
   app.on('will-quit', () => {
+    updates?.stop()
     globalShortcut.unregisterAll()
   })
 

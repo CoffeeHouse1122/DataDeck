@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'v
 import CustomSelect from './components/CustomSelect.vue'
 import PathField from './components/PathField.vue'
 import SimpleBarScroll from './components/SimpleBarScroll.vue'
+import UpdatePanel from './components/UpdatePanel.vue'
 import brandIconUrl from '../../build/icons/favicon-256x256.png'
 import { FOCUS_JOURNAL_OPTIONS, PATH_FIELD_META } from '../shared/constants'
 import {
@@ -10,6 +11,7 @@ import {
   DEFAULT_FORCE_AE_STAFF,
   DEFAULT_SUMMARY_OVERRIDES,
   type AppPreferences,
+  type AppUpdateState,
   type PipelineProgressEvent,
   type PipelineResult,
   type SelectedPaths,
@@ -39,6 +41,8 @@ const forceAeStaffInput = ref('')
 const forceAeStaffTextarea = ref<HTMLTextAreaElement | null>(null)
 const summaryOverrides = reactive<SummaryOverrides>({ ...DEFAULT_SUMMARY_OVERRIDES })
 const running = ref(false)
+const updateState = ref<AppUpdateState>({ phase: 'disabled', currentVersion: '', message: '正在读取版本信息…', generationRunning: false })
+const updateActionPending = ref(false)
 const settingsOpen = ref(false)
 const logs = ref<PipelineProgressEvent[]>([])
 const result = ref<PipelineResult | null>(null)
@@ -56,6 +60,7 @@ const closeBehaviorOptions = [
 let toastSeed = 1
 let unlisten: (() => void) | null = null
 let unlistenWindowState: (() => void) | null = null
+let unlistenUpdates: (() => void) | null = null
 
 const missingFields = computed(() =>
   Object.entries(paths)
@@ -248,7 +253,26 @@ async function run(): Promise<void> {
   }
 }
 
+async function handleUpdate(action: 'check' | 'download' | 'install'): Promise<void> {
+  if (updateActionPending.value) return
+  updateActionPending.value = true
+  try {
+    // Save all visible preferences before restart, including edits outside the settings drawer.
+    if (action === 'install') await savePreferences(false)
+    updateState.value = await (action === 'check' ? window.electronApi.checkForUpdates()
+      : action === 'download' ? window.electronApi.downloadUpdate() : window.electronApi.installUpdate())
+  } catch (error) {
+    pushToast(error instanceof Error ? error.message : '更新操作失败，请重试。', 'error')
+  } finally {
+    updateActionPending.value = false
+  }
+}
+
 onMounted(async () => {
+  unlistenUpdates = window.electronApi.onUpdateState((state) => {
+    updateState.value = state
+  })
+  updateState.value = await window.electronApi.getUpdateState()
   Object.assign(defaultPaths, await window.electronApi.getDefaultPaths())
   Object.assign(windowState, await window.electronApi.getWindowState())
   const preferences = await window.electronApi.getPreferences()
@@ -264,6 +288,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  unlistenUpdates?.()
   unlisten?.()
   unlistenWindowState?.()
 })
@@ -332,8 +357,9 @@ onBeforeUnmount(() => {
             <button type="button" class="button button--subtle button--light" @click="settingsOpen = true">
               <i class="ri-settings-3-line" />
               <span>偏好设置</span>
+              <span v-if="['available', 'downloaded'].includes(updateState.phase)" class="update-dot" aria-label="有可用更新" />
             </button>
-            <button type="button" class="button button--primary" :disabled="running" @click="run">
+            <button type="button" class="button button--primary" :disabled="running || updateState.generationRunning || updateState.phase === 'installing'" @click="run">
               <i :class="running ? 'ri-loader-4-line spin' : 'ri-play-circle-line'" />
               <span>{{ running ? '处理中…' : '生成月会文件' }}</span>
             </button>
@@ -441,6 +467,9 @@ onBeforeUnmount(() => {
         </header>
 
         <SimpleBarScroll class="drawer__body">
+          <section class="drawer-section">
+            <UpdatePanel :state="updateState" :pending="updateActionPending" :running="running" @action="handleUpdate" />
+          </section>
           <section class="drawer-section">
             <label class="field">
               <span>关闭行为</span>
@@ -1098,6 +1127,13 @@ onBeforeUnmount(() => {
 
 .drawer-section {
   padding: 12px 14px 0;
+}
+
+.update-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #2f81f7;
 }
 
 .drawer-grid {
