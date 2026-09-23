@@ -1,4 +1,6 @@
 import fs from 'node:fs/promises'
+import path from 'node:path'
+import ExcelJS from 'exceljs'
 import JSZip from 'jszip'
 import type { PipelineResult } from '../../../shared/contracts'
 import { renderTableSvg } from './svg'
@@ -81,6 +83,8 @@ type FocusJournalSeries = {
   underProcessing: number[]
   mpt: number[]
   tfd: number[]
+  primaryMonths?: string[]
+  secondaryMonths?: string[]
   primaryMetrics: Array<{ label: string; values: number[] }>
   secondaryMetrics: Array<{ label: string; values: number[] }>
 }
@@ -119,12 +123,36 @@ type PptBuildInput = {
   spotlights: JournalSpotlight[]
 }
 
+type ChartSeries = {
+  name: string
+  values: number[]
+}
+
+type ChartData = {
+  id: string
+  sheetName: string
+  categories: string[]
+  series: ChartSeries[]
+}
+
+type PptCheckItem = {
+  target: string
+  status: 'updated' | 'fallback' | 'warning'
+  detail: string
+}
+
+type TemplateObjectScan = {
+  slide: number
+  charts: Array<{ relId: string; name: string; descr: string; target: string }>
+  images: Array<{ relId: string; name: string; descr: string; target: string }>
+}
+
 const JOURNAL_SLIDES = [
-  { metricSlide: 7, chartSlide: 8 },
-  { metricSlide: 9, chartSlide: 10 },
-  { metricSlide: 11, chartSlide: 12 },
-  { metricSlide: 13, chartSlide: 14 },
-  { metricSlide: 15, chartSlide: 16 }
+  { metricSlide: 7, chartSlide: 8, key: 'foods' },
+  { metricSlide: 9, chartSlide: 10, key: 'nutrients' },
+  { metricSlide: 11, chartSlide: 12, key: 'children' },
+  { metricSlide: 13, chartSlide: 14, key: 'genes' },
+  { metricSlide: 15, chartSlide: 16, key: 'bs' }
 ]
 
 function escapeXml(value: string): string {
@@ -163,6 +191,158 @@ function excelColumnLetter(index: number): string {
     current = Math.floor((current - 1) / 26)
   }
   return result
+}
+
+function chartFormulaSheetName(sheetName: string): string {
+  return sheetName.includes(' ') || /['!]/.test(sheetName) ? `'${sheetName.replace(/'/g, "''")}'` : sheetName
+}
+
+function safeWorksheetName(name: string): string {
+  const cleaned = name.replace(/[\\/*?:[\]]/g, ' ').replace(/\s+/g, ' ').trim()
+  return (cleaned || 'Sheet1').slice(0, 31)
+}
+
+function relationshipPathForPart(partPath: string): string {
+  const slash = partPath.lastIndexOf('/')
+  const dir = slash === -1 ? '' : partPath.slice(0, slash + 1)
+  const file = slash === -1 ? partPath : partPath.slice(slash + 1)
+  return `${dir}_rels/${file}.rels`
+}
+
+function zipDirName(partPath: string): string {
+  const slash = partPath.lastIndexOf('/')
+  return slash === -1 ? '' : partPath.slice(0, slash)
+}
+
+function normalizeZipPath(partPath: string): string {
+  const parts: string[] = []
+  for (const part of partPath.replace(/\\/g, '/').split('/')) {
+    if (!part || part === '.') {
+      continue
+    }
+    if (part === '..') {
+      parts.pop()
+      continue
+    } else {
+      parts.push(part)
+    }
+  }
+  return parts.join('/')
+}
+
+function resolveZipTarget(ownerPath: string, target: string): string {
+  if (target.startsWith('/')) {
+    return normalizeZipPath(target.slice(1))
+  }
+  return normalizeZipPath(`${zipDirName(ownerPath)}/${target}`)
+}
+
+function relativeZipTarget(ownerPath: string, targetPath: string): string {
+  const from = zipDirName(ownerPath).split('/').filter(Boolean)
+  const to = targetPath.split('/').filter(Boolean)
+  while (from.length && to.length && from[0] === to[0]) {
+    from.shift()
+    to.shift()
+  }
+  return [...from.map(() => '..'), ...to].join('/')
+}
+
+function relationshipTags(xml: string): string[] {
+  return xml.match(/<Relationship\b[^>]*\/>/g) ?? []
+}
+
+function xmlAttr(tag: string, name: string): string | null {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  return tag.match(new RegExp(`${escaped}="([^"]+)"`))?.[1] ?? null
+}
+
+function replaceRelationshipTag(xml: string, id: string, nextTag: string): string {
+  const pattern = new RegExp(`<Relationship\\b[^>]*Id="${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*/>`)
+  if (pattern.test(xml)) {
+    return xml.replace(pattern, nextTag)
+  }
+  return xml.replace('</Relationships>', `${nextTag}</Relationships>`)
+}
+
+function chartDataFromMetricBlock(id: string, sheetName: string, months: string[], metrics: Array<{ label: string; values: number[] }>): ChartData {
+  const categories = metrics.map((metric) => metric.label)
+  const monthCount = Math.max(months.length, ...metrics.map((metric) => metric.values.length), 0)
+  const series = Array.from({ length: monthCount }, (_, index) => ({
+    name: months[index] ?? '',
+    values: metrics.map((metric) => Number(metric.values[index] ?? 0))
+  }))
+  return {
+    id,
+    sheetName: safeWorksheetName(sheetName),
+    categories: categories.length ? categories : [''],
+    series: series.length ? series : [{ name: '', values: categories.map(() => 0) }]
+  }
+}
+
+function departmentChartData(metrics: DepartmentMetrics): ChartData {
+  return chartDataFromMetricBlock(
+    'department_summary',
+    '科室数据',
+    metrics.yearlySeries.map((item) => item.label),
+    departmentChartMetrics(metrics)
+  )
+}
+
+function focusPrimaryChartData(series: FocusJournalSeries, key: string): ChartData {
+  return chartDataFromMetricBlock(
+    `${key}_primary`,
+    series.sheetName === 'BS' ? 'Brain Sciences' : series.sheetName,
+    series.primaryMonths?.length ? series.primaryMonths : chartMonths(series.primaryMetrics, series.months),
+    series.primaryMetrics
+  )
+}
+
+function focusSecondaryChartData(series: FocusJournalSeries, key: string): ChartData {
+  return chartDataFromMetricBlock(
+    `${key}_secondary`,
+    series.sheetName === 'BS' ? 'Brain Sciences' : series.sheetName,
+    series.secondaryMonths?.length ? series.secondaryMonths : chartMonths(series.secondaryMetrics, series.months),
+    series.secondaryMetrics
+  )
+}
+
+function findGraphicFrameChartRelIds(slideXml: string, preferredNames: string[] = []): string[] {
+  const frames = slideXml.match(/<p:graphicFrame\b[\s\S]*?<\/p:graphicFrame>/g) ?? []
+  const parsed = frames.map((frame) => {
+    const cnv = frame.match(/<p:cNvPr\b[^>]*>/)?.[0] ?? ''
+    const chartRelId = frame.match(/<c:chart\b[^>]*r:id="([^"]+)"/)?.[1] ?? ''
+    return {
+      relId: chartRelId,
+      name: xmlAttr(cnv, 'name') ?? '',
+      descr: xmlAttr(cnv, 'descr') ?? ''
+    }
+  }).filter((item) => item.relId)
+
+  const preferred = preferredNames
+    .map((name) => parsed.find((item) => item.name === name || item.descr === name))
+    .filter((item): item is { relId: string; name: string; descr: string } => Boolean(item))
+  return (preferred.length === preferredNames.length && preferred.length ? preferred : parsed).map((item) => item.relId)
+}
+
+function findPictureImageRelId(slideXml: string, preferredNames: string[] = []): string | null {
+  const pics = slideXml.match(/<p:pic\b[\s\S]*?<\/p:pic>/g) ?? []
+  const parsed = pics.map((pic) => {
+    const cnv = pic.match(/<p:cNvPr\b[^>]*>/)?.[0] ?? ''
+    const relId = pic.match(/<a:blip\b[^>]*r:embed="([^"]+)"/)?.[1] ?? ''
+    return {
+      relId,
+      name: xmlAttr(cnv, 'name') ?? '',
+      descr: xmlAttr(cnv, 'descr') ?? ''
+    }
+  }).filter((item) => item.relId)
+
+  if (!preferredNames.length) {
+    return parsed[0]?.relId ?? null
+  }
+  const preferred = parsed.find((item) =>
+    preferredNames.some((name) => item.name === name || item.descr === name)
+  )
+  return preferred?.relId ?? null
 }
 
 function updateMetricSlide(xml: string, spotlight: JournalSpotlight): string {
@@ -230,9 +410,10 @@ function setSeriesDataLabelStyle(serXml: string, size: number): string {
     .replace(/<c:numFmt\b[^>]*\/>/g, '<c:numFmt formatCode="0" sourceLinked="0"/>')
 }
 
-function replaceSerFormulae(serXml: string, sheetName: string, monthIndex: number, metricCount: number): string {
-  const column = String.fromCharCode(66 + monthIndex)
-  const escapedSheet = sheetName.includes(' ') ? `'${sheetName}'` : sheetName
+function replaceSerFormulae(serXml: string, data: ChartData, seriesIndex: number): string {
+  const column = excelColumnLetter(seriesIndex + 2)
+  const escapedSheet = chartFormulaSheetName(data.sheetName)
+  const metricCount = data.categories.length
   const formulae = [
     `${escapedSheet}!$${column}$1`,
     `${escapedSheet}!$A$2:$A$${metricCount + 1}`,
@@ -249,28 +430,25 @@ function replaceSerFormulae(serXml: string, sheetName: string, monthIndex: numbe
   })
 }
 
-function updateChartXml(xml: string, sheetName: string, months: string[], metrics: Array<{ label: string; values: number[] }>): string {
-  const usableMonths = months.length ? months : ['']
-  const usableMetrics = metrics.length ? metrics : [{ label: '', values: [0] }]
-  const labels = usableMetrics.map((metric) => metric.label)
+function updateChartXml(xml: string, data: ChartData): string {
+  const labels = data.categories
   const seriesMatches = xml.match(/<c:ser>[\s\S]*?<\/c:ser>/g) ?? []
   if (!seriesMatches.length) {
     return xml
   }
 
   const templateSeries = seriesMatches[seriesMatches.length - 1]
-  const compactLabelSize = usableMonths.length >= 8 ? 850 : usableMonths.length >= 6 ? 1000 : 1200
-  const nextSeries = usableMonths.map((month, index) => {
+  const compactLabelSize = data.series.length >= 8 ? 850 : data.series.length >= 6 ? 1000 : 1200
+  const nextSeries = data.series.map((series, index) => {
     const source = seriesMatches[index] ?? templateSeries
-    const values = usableMetrics.map((metric) => metric.values[index] ?? 0)
     let serXml = source
       .replace(/<c:idx val="\d+"\s*\/>/, `<c:idx val="${index}"/>`)
       .replace(/<c:order val="\d+"\s*\/>/, `<c:order val="${index}"/>`)
-    serXml = replaceNthCache(serXml, 'strCache', 0, [month], true)
+    serXml = replaceNthCache(serXml, 'strCache', 0, [series.name], true)
     serXml = replaceNthCache(serXml, 'strCache', 1, labels, true)
-    serXml = replaceNthCache(serXml, 'numCache', 0, values, false)
-    serXml = setSeriesDataLabelStyle(serXml, index === usableMonths.length - 1 ? 1500 : compactLabelSize)
-    return replaceSerFormulae(serXml, sheetName, index, labels.length)
+    serXml = replaceNthCache(serXml, 'numCache', 0, series.values, false)
+    serXml = setSeriesDataLabelStyle(serXml, index === data.series.length - 1 ? 1500 : compactLabelSize)
+    return replaceSerFormulae(serXml, data, index)
   }).join('')
 
   let replaced = false
@@ -336,17 +514,17 @@ function updateDepartmentChartXml(xml: string, months: string[], metrics: Array<
   })
 }
 
-async function slideChartTargets(zip: JSZip, slideNumber: number): Promise<string[]> {
+async function slideChartTargets(zip: JSZip, slideNumber: number, preferredNames: string[] = []): Promise<string[]> {
   const slideXml = await zip.file(`ppt/slides/slide${slideNumber}.xml`)?.async('string')
   const relsXml = await zip.file(`ppt/slides/_rels/slide${slideNumber}.xml.rels`)?.async('string')
   if (!slideXml || !relsXml) {
     return []
   }
 
-  const chartIds = Array.from(slideXml.matchAll(/<c:chart[^>]+r:id="([^"]+)"/g)).map((match) => match[1])
+  const chartIds = findGraphicFrameChartRelIds(slideXml, preferredNames)
   return chartIds.map((id) => {
     const relMatch = relsXml.match(new RegExp(`<Relationship[^>]+Id="${id}"[^>]+Target="([^"]+)"`))
-    return relMatch ? `ppt/${relMatch[1].replace(/^\.\.\//, '')}` : ''
+    return relMatch ? resolveZipTarget(`ppt/slides/slide${slideNumber}.xml`, relMatch[1]) : ''
   }).filter(Boolean)
 }
 
@@ -355,23 +533,135 @@ function chartMonths(metrics: Array<{ label: string; values: number[] }>, fallba
   return fallbackMonths.slice(0, maxLength || 1)
 }
 
-async function updateJournalCharts(zip: JSZip, slideNumber: number, series: FocusJournalSeries): Promise<void> {
-  const chartTargets = await slideChartTargets(zip, slideNumber)
+async function chartWorkbookBuffer(data: ChartData): Promise<Buffer> {
+  const workbook = new ExcelJS.Workbook()
+  const sheet = workbook.addWorksheet(data.sheetName)
+  sheet.getCell(1, 1).value = null
+  data.series.forEach((series, index) => {
+    sheet.getCell(1, index + 2).value = series.name
+  })
+  data.categories.forEach((category, rowIndex) => {
+    sheet.getCell(rowIndex + 2, 1).value = category
+    data.series.forEach((series, seriesIndex) => {
+      sheet.getCell(rowIndex + 2, seriesIndex + 2).value = Number(series.values[rowIndex] ?? 0)
+    })
+  })
+  sheet.columns.forEach((column) => {
+    column.width = 18
+  })
+  const buffer = await workbook.xlsx.writeBuffer()
+  return Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer)
+}
+
+async function ensureEmbeddedWorkbookContentType(zip: JSZip): Promise<void> {
+  const file = zip.file('[Content_Types].xml')
+  if (!file) {
+    return
+  }
+  let xml = await file.async('string')
+  if (!xml.includes('Extension="xlsx"')) {
+    xml = xml.replace(
+      '</Types>',
+      '<Default Extension="xlsx" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"/></Types>'
+    )
+  }
+  zip.file('[Content_Types].xml', xml)
+}
+
+async function ensureChartPackageRelationship(zip: JSZip, chartPath: string, data: ChartData, chartXml: string): Promise<{ chartXml: string; embeddingPath: string; wasExternal: boolean }> {
+  const relPath = relationshipPathForPart(chartPath)
+  const relId = chartXml.match(/<c:externalData\b[^>]*r:id="([^"]+)"/)?.[1] ?? 'rId1'
+  let relsXml = await zip.file(relPath)?.async('string')
+  if (!relsXml) {
+    relsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'
+  }
+
+  const existing = relationshipTags(relsXml).find((tag) => xmlAttr(tag, 'Id') === relId)
+  const existingTarget = existing ? xmlAttr(existing, 'Target') : null
+  const existingType = existing ? xmlAttr(existing, 'Type') ?? '' : ''
+  const isPackage = existingType.endsWith('/package') && existingTarget !== null && !existing?.includes('TargetMode="External"')
+  const embeddingPath = isPackage
+    ? resolveZipTarget(chartPath, existingTarget as string)
+    : `ppt/embeddings/datadeck-${data.id}.xlsx`
+  const target = relativeZipTarget(chartPath, embeddingPath)
+  const nextTag = `<Relationship Id="${relId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/package" Target="${escapeXml(target)}"/>`
+  zip.file(relPath, replaceRelationshipTag(relsXml, relId, nextTag))
+
+  const nextChartXml = chartXml.includes('<c:externalData')
+    ? chartXml.replace(/<c:externalData\b[^>]*r:id="[^"]+"[^>]*>([\s\S]*?)<\/c:externalData>/, `<c:externalData r:id="${relId}"><c:autoUpdate val="0"/></c:externalData>`)
+      .replace(/<c:externalData\b[^>]*r:id="[^"]+"[^>]*\/>/, `<c:externalData r:id="${relId}"><c:autoUpdate val="0"/></c:externalData>`)
+    : chartXml.replace('</c:chartSpace>', `<c:externalData r:id="${relId}"><c:autoUpdate val="0"/></c:externalData></c:chartSpace>`)
+
+  return {
+    chartXml: nextChartXml,
+    embeddingPath,
+    wasExternal: !isPackage
+  }
+}
+
+function validateChartXmlData(chartXml: string, data: ChartData): string[] {
+  const missing: string[] = []
+  for (const series of data.series) {
+    if (series.name && !chartXml.includes(`<c:v>${escapeXml(series.name)}</c:v>`)) {
+      missing.push(`month ${series.name}`)
+    }
+  }
+  for (const category of data.categories) {
+    if (category && !chartXml.includes(`<c:v>${escapeXml(category)}</c:v>`)) {
+      missing.push(`metric ${category}`)
+    }
+  }
+  return missing
+}
+
+async function updatePptChart(zip: JSZip, chartPath: string, data: ChartData, checks: PptCheckItem[]): Promise<void> {
+  const file = zip.file(chartPath)
+  if (!file) {
+    checks.push({ target: data.id, status: 'warning', detail: `${chartPath} was not found` })
+    return
+  }
+
+  const sourceXml = await file.async('string')
+  const patchedXml = updateChartXml(sourceXml, data)
+  const packageInfo = await ensureChartPackageRelationship(zip, chartPath, data, patchedXml)
+  zip.file(chartPath, packageInfo.chartXml)
+  zip.file(packageInfo.embeddingPath, await chartWorkbookBuffer(data))
+  await ensureEmbeddedWorkbookContentType(zip)
+
+  const missing = validateChartXmlData(packageInfo.chartXml, data)
+  if (missing.length) {
+    checks.push({ target: data.id, status: 'warning', detail: `${chartPath} missing ${missing.join(', ')}` })
+  } else {
+    checks.push({
+      target: data.id,
+      status: packageInfo.wasExternal ? 'fallback' : 'updated',
+      detail: `${chartPath} updated with ${data.series.length} month(s), ${data.categories.length} metric(s), workbook ${packageInfo.embeddingPath}`
+    })
+  }
+}
+
+async function updateJournalCharts(zip: JSZip, slideNumber: number, series: FocusJournalSeries, key: string, checks: PptCheckItem[]): Promise<void> {
+  const chartTargets = await slideChartTargets(zip, slideNumber, [
+    `chart_${key}_primary`,
+    `chart_${key}_secondary`
+  ])
   const chartUpdates = [
-    { target: chartTargets[0], metrics: series.primaryMetrics, months: chartMonths(series.primaryMetrics, series.months) },
-    { target: chartTargets[1], metrics: series.secondaryMetrics, months: chartMonths(series.secondaryMetrics, series.months) }
+    { target: chartTargets[0], data: focusPrimaryChartData(series, key), objectName: `chart_${key}_primary` },
+    { target: chartTargets[1], data: focusSecondaryChartData(series, key), objectName: `chart_${key}_secondary` }
   ]
 
   for (const update of chartUpdates) {
     if (!update.target) {
+      checks.push({ target: update.objectName, status: 'warning', detail: `Slide ${slideNumber} chart target was not found` })
       continue
     }
     const file = zip.file(update.target)
     if (!file) {
+      checks.push({ target: update.objectName, status: 'warning', detail: `${update.target} is missing from PPT package` })
       continue
     }
     const xml = await file.async('string')
-    zip.file(update.target, updateChartXml(xml, series.sheetName === 'BS' ? 'Brain Sciences' : series.sheetName, update.months, update.metrics))
+    await updatePptChart(zip, update.target, update.data, checks)
   }
 }
 
@@ -444,23 +734,47 @@ async function ensureSvgContentType(zip: JSZip): Promise<void> {
   }
 }
 
-async function replaceSlideImageWithSvg(zip: JSZip, slideNumber: number, relationId: string, targetName: string, svg: string): Promise<void> {
+async function replaceSlideImageWithSvg(
+  zip: JSZip,
+  slideNumber: number,
+  relationId: string,
+  targetName: string,
+  svg: string,
+  checks: PptCheckItem[],
+  preferredNames: string[] = []
+): Promise<void> {
+  const slideXml = await zip.file(`ppt/slides/slide${slideNumber}.xml`)?.async('string')
+  const namedRelationId = slideXml ? findPictureImageRelId(slideXml, preferredNames) : null
+  const firstRelationId = slideXml ? findPictureImageRelId(slideXml) : null
   const relPath = `ppt/slides/_rels/slide${slideNumber}.xml.rels`
   const relFile = zip.file(relPath)
   if (!relFile) {
+    checks.push({ target: targetName, status: 'warning', detail: `Slide ${slideNumber} relationship file was not found` })
     return
   }
   const relsXml = await relFile.async('string')
-  zip.file(relPath, relsXml.replace(
-    new RegExp(`(<Relationship[^>]+Id="${relationId}"[^>]+Type="http://schemas\\.openxmlformats\\.org/officeDocument/2006/relationships/image"[^>]+Target=")[^"]+("[^>]*\\/>)`),
+  const hardcodedExists = new RegExp(`<Relationship[^>]+Id="${relationId}"[^>]+Type="http://schemas\\.openxmlformats\\.org/officeDocument/2006/relationships/image"`).test(relsXml)
+  const resolvedRelationId = namedRelationId ?? (hardcodedExists ? relationId : firstRelationId ?? relationId)
+  const nextRelsXml = relsXml.replace(
+    new RegExp(`(<Relationship[^>]+Id="${resolvedRelationId}"[^>]+Type="http://schemas\\.openxmlformats\\.org/officeDocument/2006/relationships/image"[^>]+Target=")[^"]+("[^>]*\\/>)`),
     `$1../media/${targetName}$2`
-  ))
+  )
+  if (nextRelsXml === relsXml) {
+    checks.push({ target: targetName, status: 'warning', detail: `Slide ${slideNumber} image relationship ${resolvedRelationId} was not replaced` })
+  } else {
+    checks.push({
+      target: targetName,
+      status: resolvedRelationId === relationId ? 'updated' : 'fallback',
+      detail: `Slide ${slideNumber} image ${resolvedRelationId} replaced`
+    })
+  }
+  zip.file(relPath, nextRelsXml)
   zip.file(`ppt/media/${targetName}`, svg)
   await ensureSvgContentType(zip)
 }
 
-async function replaceSlide5OfficeImage(zip: JSZip, officeSvg: string): Promise<void> {
-  await replaceSlideImageWithSvg(zip, 5, 'rId2', 'office-sheet-a-u.svg', officeSvg)
+async function replaceSlide5OfficeImage(zip: JSZip, officeSvg: string, checks: PptCheckItem[]): Promise<void> {
+  await replaceSlideImageWithSvg(zip, 5, 'rId2', 'office-sheet-a-u.svg', officeSvg, checks, ['img_office_sheet'])
 }
 
 function departmentChartMetrics(metrics: DepartmentMetrics): Array<{ label: string; values: number[] }> {
@@ -475,17 +789,13 @@ function departmentChartMetrics(metrics: DepartmentMetrics): Array<{ label: stri
   ]
 }
 
-async function updateDepartmentChart(zip: JSZip, metrics: DepartmentMetrics): Promise<void> {
-  const [chartTarget] = await slideChartTargets(zip, 6)
+async function updateDepartmentChart(zip: JSZip, metrics: DepartmentMetrics, checks: PptCheckItem[]): Promise<void> {
+  const [chartTarget] = await slideChartTargets(zip, 6, ['chart_department_summary'])
   if (!chartTarget) {
+    checks.push({ target: 'chart_department_summary', status: 'warning', detail: 'Slide 6 chart target was not found' })
     return
   }
-  const file = zip.file(chartTarget)
-  if (!file) {
-    return
-  }
-  const months = metrics.yearlySeries.map((item) => item.label)
-  zip.file(chartTarget, updateDepartmentChartXml(await file.async('string'), months, departmentChartMetrics(metrics)))
+  await updatePptChart(zip, chartTarget, departmentChartData(metrics), checks)
 }
 
 function updateDepartmentTextSlide(xml: string, metrics: DepartmentMetrics): string {
@@ -508,13 +818,13 @@ function updateDepartmentTextSlide(xml: string, metrics: DepartmentMetrics): str
   return patterns.reduce((nextXml, pattern, index) => nextXml.replace(pattern, `<a:t>${escapeXml(replacements[index])}</a:t>`), xml)
 }
 
-async function updateDepartmentSlide(zip: JSZip, metrics: DepartmentMetrics): Promise<void> {
+async function updateDepartmentSlide(zip: JSZip, metrics: DepartmentMetrics, checks: PptCheckItem[]): Promise<void> {
   const slidePath = 'ppt/slides/slide6.xml'
   const slide = zip.file(slidePath)
   if (slide) {
     zip.file(slidePath, updateDepartmentTextSlide(await slide.async('string'), metrics))
   }
-  await updateDepartmentChart(zip, metrics)
+  await updateDepartmentChart(zip, metrics, checks)
 }
 
 function buildCompletionTableSvg(rows: CompletionRow[]): string {
@@ -555,22 +865,8 @@ function buildCompletionTableSvg(rows: CompletionRow[]): string {
   })
 }
 
-async function replaceSlide17Image(zip: JSZip, completionSvg: string): Promise<void> {
-  const relPath = 'ppt/slides/_rels/slide17.xml.rels'
-  const relFile = zip.file(relPath)
-  if (!relFile) {
-    return
-  }
-
-  const svgTarget = '../media/completion-rate-esci-scopus-others.svg'
-  const relsXml = await relFile.async('string')
-  const nextRels = relsXml.replace(
-    /(<Relationship[^>]+Id="rId2"[^>]+Type="http:\/\/schemas\.openxmlformats\.org\/officeDocument\/2006\/relationships\/image"[^>]+Target=")[^"]+("[^>]*\/>)/,
-    `$1${svgTarget}$2`
-  )
-  zip.file(relPath, nextRels)
-  zip.file('ppt/media/completion-rate-esci-scopus-others.svg', completionSvg)
-  await ensureSvgContentType(zip)
+async function replaceSlide17Image(zip: JSZip, completionSvg: string, checks: PptCheckItem[]): Promise<void> {
+  await replaceSlideImageWithSvg(zip, 17, 'rId2', 'completion-rate-esci-scopus-others.svg', completionSvg, checks, ['img_completion_rate'])
 }
 
 function blankSvg(): string {
@@ -606,18 +902,18 @@ function updateStaffPiCompletionText(xml: string, currentCount: number, delta: n
   })
 }
 
-async function updateStaffPiCompletionSlide(zip: JSZip, summary: PptBuildInput['staffPiCompletion'], tableSvgs: string[]): Promise<void> {
+async function updateStaffPiCompletionSlide(zip: JSZip, summary: PptBuildInput['staffPiCompletion'], tableSvgs: string[], checks: PptCheckItem[]): Promise<void> {
   const slidePath = 'ppt/slides/slide19.xml'
   const slide = zip.file(slidePath)
   if (slide) {
     zip.file(slidePath, updateStaffPiCompletionText(await slide.async('string'), summary.currentCount, summary.delta))
   }
 
-  await replaceSlideImageWithSvg(zip, 19, 'rId1', 'staff-pi-completion-1.svg', tableSvgs[0] ?? blankSvg())
-  await replaceSlideImageWithSvg(zip, 19, 'rId2', 'staff-pi-completion-2.svg', tableSvgs[1] ?? blankSvg())
+  await replaceSlideImageWithSvg(zip, 19, 'rId1', 'staff-pi-completion-1.svg', tableSvgs[0] ?? blankSvg(), checks, ['img_staff_pi_completion_left'])
+  await replaceSlideImageWithSvg(zip, 19, 'rId2', 'staff-pi-completion-2.svg', tableSvgs[1] ?? blankSvg(), checks, ['img_staff_pi_completion_right'])
 }
 
-async function updateStaffOwnerPublicationSlide(zip: JSZip, tableSvgs: string[]): Promise<void> {
+async function updateStaffOwnerPublicationSlide(zip: JSZip, tableSvgs: string[], checks: PptCheckItem[]): Promise<void> {
   const slidePath = 'ppt/slides/slide20.xml'
   const slide = zip.file(slidePath)
   if (slide) {
@@ -627,28 +923,23 @@ async function updateStaffOwnerPublicationSlide(zip: JSZip, tableSvgs: string[])
       .replace(/<a:t>鐗瑰垔鍙戞枃<\/a:t>/g, '<a:t>owner发文</a:t>'))
   }
 
-  await replaceSlideImageWithSvg(zip, 20, 'rId1', 'staff-owner-publication.svg', tableSvgs[0] ?? blankSvg())
-  await replaceSlideImageWithSvg(zip, 20, 'rId2', 'mr-si-publ-top30.svg', tableSvgs[1] ?? blankSvg())
+  await replaceSlideImageWithSvg(zip, 20, 'rId1', 'staff-owner-publication.svg', tableSvgs[0] ?? blankSvg(), checks, ['img_staff_owner_left'])
+  await replaceSlideImageWithSvg(zip, 20, 'rId2', 'mr-si-publ-top30.svg', tableSvgs[1] ?? blankSvg(), checks, ['img_staff_owner_right'])
 }
 
-async function updateStaffSiSetupSlide(zip: JSZip, tableSvgs: string[]): Promise<void> {
-  await replaceSlideImageWithSvg(zip, 21, 'rId1', 'staff-sme-si-setup.svg', tableSvgs[0] ?? blankSvg())
-  await replaceSlideImageWithSvg(zip, 21, 'rId2', 'mr-si-setup-top30.svg', tableSvgs[1] ?? blankSvg())
+async function updateStaffSiSetupSlide(zip: JSZip, tableSvgs: string[], checks: PptCheckItem[]): Promise<void> {
+  await replaceSlideImageWithSvg(zip, 21, 'rId1', 'staff-sme-si-setup.svg', tableSvgs[0] ?? blankSvg(), checks, ['img_staff_si_setup_left'])
+  await replaceSlideImageWithSvg(zip, 21, 'rId2', 'mr-si-setup-top30.svg', tableSvgs[1] ?? blankSvg(), checks, ['img_staff_si_setup_right'])
 }
 
-async function updateStaffSiSubSlide(zip: JSZip, tableSvgs: string[]): Promise<void> {
-  await replaceSlideImageWithSvg(zip, 22, 'rId1', 'staff-sme-si-sub.svg', tableSvgs[0] ?? blankSvg())
-  await replaceSlideImageWithSvg(zip, 22, 'rId2', 'mr-si-sub-top30.svg', tableSvgs[1] ?? blankSvg())
+async function updateStaffSiSubSlide(zip: JSZip, tableSvgs: string[], checks: PptCheckItem[]): Promise<void> {
+  await replaceSlideImageWithSvg(zip, 22, 'rId1', 'staff-sme-si-sub.svg', tableSvgs[0] ?? blankSvg(), checks, ['img_staff_si_sub_left'])
+  await replaceSlideImageWithSvg(zip, 22, 'rId2', 'mr-si-sub-top30.svg', tableSvgs[1] ?? blankSvg(), checks, ['img_staff_si_sub_right'])
 }
 
-async function updateStaffAePublSlide(zip: JSZip, tableSvgs: string[]): Promise<void> {
-  await replaceSlideImageWithSvg(zip, 23, 'rId1', 'staff-ae-publ.svg', tableSvgs[0] ?? blankSvg())
-  await replaceSlideImageWithSvg(zip, 23, 'rId2', 'mr-publ-top30.svg', tableSvgs[1] ?? blankSvg())
-}
-
-function xmlAttr(tag: string, name: string): string | null {
-  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  return tag.match(new RegExp(`${escaped}="([^"]+)"`))?.[1] ?? null
+async function updateStaffAePublSlide(zip: JSZip, tableSvgs: string[], checks: PptCheckItem[]): Promise<void> {
+  await replaceSlideImageWithSvg(zip, 23, 'rId1', 'staff-ae-publ.svg', tableSvgs[0] ?? blankSvg(), checks, ['img_staff_ae_publ_left'])
+  await replaceSlideImageWithSvg(zip, 23, 'rId2', 'mr-publ-top30.svg', tableSvgs[1] ?? blankSvg(), checks, ['img_staff_ae_publ_right'])
 }
 
 function nextSlideNumber(zip: JSZip): number {
@@ -743,17 +1034,97 @@ async function updateAppSlideCount(zip: JSZip): Promise<void> {
   zip.file('docProps/app.xml', appXml.replace(/<Slides>(\d+)<\/Slides>/, (_match, count) => `<Slides>${Number.parseInt(count, 10) + 1}</Slides>`))
 }
 
+async function validateNoExternalPptChartReferences(zip: JSZip): Promise<void> {
+  const externalRefs: string[] = []
+  for (const file of Object.values(zip.files)) {
+    if (file.dir || !file.name.startsWith('ppt/charts/_rels/') || !file.name.endsWith('.rels')) {
+      continue
+    }
+    const xml = await file.async('string')
+    if (xml.includes('TargetMode="External"')) {
+      externalRefs.push(file.name)
+    }
+  }
+  if (externalRefs.length) {
+    throw new Error(`Generated PPT still contains external chart references: ${externalRefs.join(', ')}`)
+  }
+}
+
+async function scanTemplateObjects(zip: JSZip): Promise<TemplateObjectScan[]> {
+  const slides = [5, 6, 8, 10, 12, 14, 16, 17, 19, 20, 21, 22, 23]
+  const result: TemplateObjectScan[] = []
+  for (const slide of slides) {
+    const slidePath = `ppt/slides/slide${slide}.xml`
+    const relPath = `ppt/slides/_rels/slide${slide}.xml.rels`
+    const slideXml = await zip.file(slidePath)?.async('string')
+    const relsXml = await zip.file(relPath)?.async('string')
+    if (!slideXml || !relsXml) {
+      continue
+    }
+    const relTarget = (relId: string) => {
+      const rel = relationshipTags(relsXml).find((tag) => xmlAttr(tag, 'Id') === relId)
+      const target = rel ? xmlAttr(rel, 'Target') : null
+      return target ? resolveZipTarget(slidePath, target) : ''
+    }
+    const charts = (slideXml.match(/<p:graphicFrame\b[\s\S]*?<\/p:graphicFrame>/g) ?? [])
+      .map((frame) => {
+        const cnv = frame.match(/<p:cNvPr\b[^>]*>/)?.[0] ?? ''
+        const relId = frame.match(/<c:chart\b[^>]*r:id="([^"]+)"/)?.[1] ?? ''
+        return {
+          relId,
+          name: xmlAttr(cnv, 'name') ?? '',
+          descr: xmlAttr(cnv, 'descr') ?? '',
+          target: relId ? relTarget(relId) : ''
+        }
+      })
+      .filter((item) => item.relId)
+    const images = (slideXml.match(/<p:pic\b[\s\S]*?<\/p:pic>/g) ?? [])
+      .map((pic) => {
+        const cnv = pic.match(/<p:cNvPr\b[^>]*>/)?.[0] ?? ''
+        const relId = pic.match(/<a:blip\b[^>]*r:embed="([^"]+)"/)?.[1] ?? ''
+        return {
+          relId,
+          name: xmlAttr(cnv, 'name') ?? '',
+          descr: xmlAttr(cnv, 'descr') ?? '',
+          target: relId ? relTarget(relId) : ''
+        }
+      })
+      .filter((item) => item.relId)
+    result.push({ slide, charts, images })
+  }
+  return result
+}
+
+async function writePptCheckReport(outputPath: string, checks: PptCheckItem[], templateObjects: TemplateObjectScan[]): Promise<void> {
+  const parsed = path.parse(outputPath)
+  const reportPath = path.join(parsed.dir, `${parsed.name}-ppt-check.json`)
+  const summary = {
+    generatedAt: new Date().toISOString(),
+    outputPath,
+    totals: {
+      updated: checks.filter((item) => item.status === 'updated').length,
+      fallback: checks.filter((item) => item.status === 'fallback').length,
+      warning: checks.filter((item) => item.status === 'warning').length
+    },
+    templateObjects,
+    checks
+  }
+  await fs.writeFile(reportPath, JSON.stringify(summary, null, 2), 'utf8')
+}
+
 export async function buildPresentation(input: PptBuildInput): Promise<void> {
   const zip = await JSZip.loadAsync(await fs.readFile(input.templatePath))
+  const checks: PptCheckItem[] = []
 
   const titleSlidePath = 'ppt/slides/slide1.xml'
   const titleSlide = zip.file(titleSlidePath)
   if (titleSlide) {
     zip.file(titleSlidePath, updateTitleSlide(await titleSlide.async('string'), input.reportMonthTitle))
+    checks.push({ target: 'slide1_title', status: 'updated', detail: `Title updated to ${input.reportMonthTitle}` })
   }
 
-  await replaceSlide5OfficeImage(zip, input.snapshots.officeSvg)
-  await updateDepartmentSlide(zip, input.departmentMetrics)
+  await replaceSlide5OfficeImage(zip, input.snapshots.officeSvg, checks)
+  await updateDepartmentSlide(zip, input.departmentMetrics, checks)
 
   for (const [index, slideMap] of JOURNAL_SLIDES.entries()) {
     const spotlight = input.spotlights[index]
@@ -766,16 +1137,20 @@ export async function buildPresentation(input: PptBuildInput): Promise<void> {
     const metricSlide = zip.file(metricSlidePath)
     if (metricSlide) {
       zip.file(metricSlidePath, updateMetricSlide(await metricSlide.async('string'), spotlight))
+      checks.push({ target: `slide${slideMap.metricSlide}_metrics`, status: 'updated', detail: `${spotlight.displayName} metrics updated` })
     }
 
-    await updateJournalCharts(zip, slideMap.chartSlide, series)
+    await updateJournalCharts(zip, slideMap.chartSlide, series, slideMap.key, checks)
   }
 
-  await replaceSlide17Image(zip, input.snapshots.completionSvg)
-  await updateStaffPiCompletionSlide(zip, input.staffPiCompletion, input.snapshots.staffPiCompletionSvgs)
-  await updateStaffOwnerPublicationSlide(zip, input.snapshots.staffOwnerSvgs)
-  await updateStaffSiSetupSlide(zip, input.snapshots.staffSiSetupSvgs)
-  await updateStaffSiSubSlide(zip, input.snapshots.staffSiSubSvgs)
-  await updateStaffAePublSlide(zip, input.snapshots.staffAePublSvgs)
+  await replaceSlide17Image(zip, input.snapshots.completionSvg, checks)
+  await updateStaffPiCompletionSlide(zip, input.staffPiCompletion, input.snapshots.staffPiCompletionSvgs, checks)
+  await updateStaffOwnerPublicationSlide(zip, input.snapshots.staffOwnerSvgs, checks)
+  await updateStaffSiSetupSlide(zip, input.snapshots.staffSiSetupSvgs, checks)
+  await updateStaffSiSubSlide(zip, input.snapshots.staffSiSubSvgs, checks)
+  await updateStaffAePublSlide(zip, input.snapshots.staffAePublSvgs, checks)
+  await validateNoExternalPptChartReferences(zip)
+  const templateObjects = await scanTemplateObjects(zip)
   await fs.writeFile(input.outputPath, await zip.generateAsync({ type: 'nodebuffer' }))
+  await writePptCheckReport(input.outputPath, checks, templateObjects)
 }
