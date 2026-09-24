@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import CustomSelect from './components/CustomSelect.vue'
 import PathField from './components/PathField.vue'
 import SimpleBarScroll from './components/SimpleBarScroll.vue'
@@ -51,7 +51,46 @@ const windowState = reactive<WindowState>({
   isAlwaysOnTop: false,
   isMaximized: false
 })
-const pathFields = PATH_FIELD_META
+const sourceField = PATH_FIELD_META.find((item) => item.key === 'mrWorkbook')!
+const outputField = PATH_FIELD_META.find((item) => item.key === 'outputDir')!
+const templateFields = PATH_FIELD_META.filter((item) => !['mrWorkbook', 'outputDir'].includes(item.key))
+const templatesOpen = ref(false)
+const logsOpen = ref(false)
+const initialized = ref(false)
+const runError = ref('')
+const elapsedSeconds = ref(0)
+const settingsDialog = ref<HTMLElement | null>(null)
+const settingsTrigger = ref<HTMLButtonElement | null>(null)
+const busy = computed(() => running.value || updateState.value.generationRunning || updateState.value.phase === 'installing')
+const templateCount = computed(() => templateFields.filter((item) => paths[item.key]).length)
+const latestLog = computed(() => logs.value.at(-1))
+const reportMonth = computed(() => {
+  const name = paths.mrWorkbook.split(/[\\/]/).at(-1) ?? ''
+  const match = name.match(/^MR_\d{6}-(\d{4})(\d{2})\.xlsx$/i)
+  return match && Number(match[2]) >= 1 && Number(match[2]) <= 12 ? `${match[1]}年${match[2]}月` : '选择 MR 后识别'
+})
+const outputFiles = computed(() => result.value ? [
+  { label: '月会数据', path: result.value.outputs.monthlyWorkbook, icon: 'ri-file-excel-2-line' },
+  { label: '人员数据', path: result.value.outputs.staffWorkbook, icon: 'ri-file-excel-2-line' },
+  { label: 'PPT 成品', path: result.value.outputs.presentation, icon: 'ri-file-ppt-2-line' }
+] : [])
+const generatedDirectory = computed(() => result.value?.outputs.monthlyWorkbook.replace(/[/\\][^/\\]*$/, '') ?? '')
+const statusText = computed(() => !initialized.value ? '正在加载设置' : updateState.value.phase === 'installing' ? '正在安装更新' : running.value ? '正在生成' : runError.value ? '生成失败' : missingFields.value.length ? '待补齐文件' : '就绪')
+watch(templateCount, (count) => { if (count < templateFields.length) templatesOpen.value = true })
+watch(settingsOpen, async (open) => {
+  await nextTick()
+  if (open) settingsDialog.value?.querySelector<HTMLButtonElement>('button')?.focus()
+  else settingsTrigger.value?.focus()
+})
+
+function handleDialogKey(event: KeyboardEvent): void {
+  if (event.key === 'Escape') { settingsOpen.value = false; return }
+  if (event.key !== 'Tab') return
+  const controls = Array.from(settingsDialog.value?.querySelectorAll<HTMLElement>('button:not(:disabled), input, textarea, [tabindex="0"]') ?? [])
+  const first = controls[0], last = controls.at(-1)
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus() }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus() }
+}
 const closeBehaviorOptions = [
   { label: '关闭到托盘', value: 'tray' },
   { label: '直接退出', value: 'quit' }
@@ -159,10 +198,12 @@ async function pickPath(key: keyof SelectedPaths, title: string, filters: Array<
 
   if (chosen) {
     paths[key] = chosen
+    try { await savePreferences(false) } catch { pushToast('路径已选择，但保存失败，请重试保存设置。', 'error') }
   }
 }
 
 async function handlePick(item: (typeof PATH_FIELD_META)[number]): Promise<void> {
+  if (busy.value) return
   await pickPath(
     item.key,
     item.label,
@@ -179,8 +220,10 @@ async function handleReveal(key: keyof SelectedPaths): Promise<void> {
   }
 }
 
-function handleReset(key: keyof SelectedPaths): void {
+async function handleReset(key: keyof SelectedPaths): Promise<void> {
+  if (busy.value) return
   paths[key] = defaultPaths[key] ?? ''
+  try { await savePreferences(false) } catch { pushToast('路径保存失败，请重试保存设置。', 'error') }
 }
 
 async function revealOutput(targetPath: string): Promise<void> {
@@ -202,8 +245,10 @@ async function savePreferences(showToast = true): Promise<void> {
 }
 
 async function saveAndCloseSettings(): Promise<void> {
-  await savePreferences()
-  settingsOpen.value = false
+  try {
+    await savePreferences()
+    settingsOpen.value = false
+  } catch { pushToast('设置保存失败，请重试。', 'error') }
 }
 
 async function refreshWindow(): Promise<void> {
@@ -227,7 +272,9 @@ async function closeWindow(): Promise<void> {
 }
 
 async function run(): Promise<void> {
+  if (busy.value || !initialized.value) return
   if (missingFields.value.length) {
+    if (templateCount.value < templateFields.length) templatesOpen.value = true
     pushToast('还有输入文件没选完，先把路径补齐。', 'error')
     return
   }
@@ -235,6 +282,9 @@ async function run(): Promise<void> {
   running.value = true
   result.value = null
   logs.value = []
+  logsOpen.value = false
+  runError.value = ''
+  const started = Date.now()
 
   try {
     await savePreferences(false)
@@ -247,8 +297,11 @@ async function run(): Promise<void> {
     })
     pushToast('月会文件已经生成完成。', 'success')
   } catch (error) {
-    pushToast(error instanceof Error ? error.message : '生成失败，请查看日志。', 'error')
+    runError.value = error instanceof Error ? error.message : '生成失败，请查看日志。'
+    logsOpen.value = true
+    pushToast(runError.value, 'error')
   } finally {
+    elapsedSeconds.value = Math.max(1, Math.round((Date.now() - started) / 1000))
     running.value = false
   }
 }
@@ -269,22 +322,29 @@ async function handleUpdate(action: 'check' | 'download' | 'install'): Promise<v
 }
 
 onMounted(async () => {
-  unlistenUpdates = window.electronApi.onUpdateState((state) => {
-    updateState.value = state
-  })
-  updateState.value = await window.electronApi.getUpdateState()
-  Object.assign(defaultPaths, await window.electronApi.getDefaultPaths())
-  Object.assign(windowState, await window.electronApi.getWindowState())
-  const preferences = await window.electronApi.getPreferences()
-  applyPreferences(preferences)
-  await nextTick()
-  resizeForceAeStaffTextarea()
-  unlisten = window.electronApi.onPipelineProgress((event) => {
-    logs.value = [...logs.value, event]
-  })
-  unlistenWindowState = window.electronApi.onWindowStateChange((state) => {
-    Object.assign(windowState, state)
-  })
+  try {
+    unlistenUpdates = window.electronApi.onUpdateState((state) => {
+      updateState.value = state
+    })
+    updateState.value = await window.electronApi.getUpdateState()
+    Object.assign(defaultPaths, await window.electronApi.getDefaultPaths())
+    Object.assign(windowState, await window.electronApi.getWindowState())
+    const preferences = await window.electronApi.getPreferences()
+    applyPreferences(preferences)
+    templatesOpen.value = templateCount.value < templateFields.length
+    initialized.value = true
+    await nextTick()
+    resizeForceAeStaffTextarea()
+    unlisten = window.electronApi.onPipelineProgress((event) => {
+      logs.value = [...logs.value, event]
+      if (event.level === 'error' || event.level === 'warning') logsOpen.value = true
+    })
+    unlistenWindowState = window.electronApi.onWindowStateChange((state) => {
+      Object.assign(windowState, state)
+    })
+  } catch {
+    pushToast('初始化失败，请使用标题栏刷新重试。', 'error')
+  }
 })
 
 onBeforeUnmount(() => {
@@ -297,172 +357,104 @@ onBeforeUnmount(() => {
 <template>
   <div class="app-shell">
     <header class="topbar">
+      <div class="window-brand"><img :src="brandIconUrl" alt="" /><strong>DataDeck</strong></div>
       <div class="window-controls">
-        <button type="button" class="titlebar-button" title="刷新" @click="refreshWindow">
-          <i class="ri-refresh-line" />
-        </button>
-        <button
-          type="button"
-          class="titlebar-button"
-          :class="{ active: windowState.isAlwaysOnTop }"
-          :title="windowState.isAlwaysOnTop ? '取消置顶' : '窗口置顶'"
-          @click="toggleAlwaysOnTop"
-        >
-          <i :class="windowState.isAlwaysOnTop ? 'ri-pushpin-2-fill' : 'ri-pushpin-line'" />
-        </button>
-        <button type="button" class="titlebar-button" title="最小化" @click="minimizeWindow">
-          <i class="ri-subtract-line" />
-        </button>
-        <button
-          type="button"
-          class="titlebar-button"
-          :title="windowState.isMaximized ? '还原' : '最大化'"
-          @click="toggleMaximizeWindow"
-        >
-          <i :class="windowState.isMaximized ? 'ri-checkbox-multiple-blank-line' : 'ri-checkbox-blank-line'" />
-        </button>
-        <button type="button" class="titlebar-button titlebar-button--close" title="关闭" @click="closeWindow">
-          <i class="ri-close-line" />
-        </button>
+        <button class="titlebar-button" title="刷新" aria-label="刷新" :disabled="busy" @click="refreshWindow"><i aria-hidden="true" class="ri-refresh-line" /></button>
+        <button class="titlebar-button" :class="{ active: windowState.isAlwaysOnTop }" :title="windowState.isAlwaysOnTop ? '取消置顶' : '窗口置顶'" aria-label="窗口置顶" :aria-pressed="windowState.isAlwaysOnTop" @click="toggleAlwaysOnTop"><i aria-hidden="true" class="ri-pushpin-line" /></button>
+        <button class="titlebar-button" title="最小化" aria-label="最小化" @click="minimizeWindow"><i aria-hidden="true" class="ri-subtract-line" /></button>
+        <button class="titlebar-button" :title="windowState.isMaximized ? '还原' : '最大化'" aria-label="最大化或还原" @click="toggleMaximizeWindow"><i aria-hidden="true" :class="windowState.isMaximized ? 'ri-checkbox-multiple-blank-line' : 'ri-checkbox-blank-line'" /></button>
+        <button class="titlebar-button titlebar-button--close" title="关闭" aria-label="关闭" @click="closeWindow"><i aria-hidden="true" class="ri-close-line" /></button>
       </div>
     </header>
 
-    <main class="workspace-scroll">
-      <div class="workspace">
-        <section class="hero panel">
-          <div class="brand hero__brand">
-            <div class="brand__mark">
-              <img :src="brandIconUrl" alt="" />
-            </div>
-            <div>
-              <strong>DataDeck</strong>
-              <p>数据整理与月会文件生成</p>
-            </div>
-          </div>
-          <div class="hero__meta">
-            <div>
-              <strong>{{ result?.detected.reportKey ?? '----' }}</strong>
-              <span>Report Key</span>
-            </div>
-            <div>
-              <strong>{{ result?.detected.reportMonthLabel ?? '--' }}</strong>
-              <span>月份标识</span>
-            </div>
-            <div>
-              <strong>{{ missingFields.length === 0 ? 'Ready' : `${missingFields.length} Missing` }}</strong>
-              <span>输入状态</span>
-            </div>
-          </div>
-          <div class="hero__actions">
-            <button type="button" class="button button--subtle button--light" @click="settingsOpen = true">
-              <i class="ri-settings-3-line" />
-              <span>偏好设置</span>
-              <span v-if="['available', 'downloaded'].includes(updateState.phase)" class="update-dot" aria-label="有可用更新" />
-            </button>
-            <button type="button" class="button button--primary" :disabled="running || updateState.generationRunning || updateState.phase === 'installing'" @click="run">
-              <i :class="running ? 'ri-loader-4-line spin' : 'ri-play-circle-line'" />
-              <span>{{ running ? '处理中…' : '生成月会文件' }}</span>
-            </button>
+    <SimpleBarScroll class="workspace-scroll" :inert="settingsOpen">
+      <main class="workspace">
+        <header class="workspace-heading">
+          <h1>月会文件</h1>
+          <button ref="settingsTrigger" class="button button--subtle" @click="settingsOpen = true">
+            <i aria-hidden="true" class="ri-settings-3-line" /><span>偏好设置</span>
+            <span v-if="['available', 'downloaded'].includes(updateState.phase)" class="update-dot" aria-label="有可用更新" />
+          </button>
+        </header>
+
+        <section class="panel source-panel" aria-label="MR 数据源">
+          <PathField :label="sourceField.label" :description="sourceField.description" :value="paths.mrWorkbook" :default-value="defaultPaths.mrWorkbook" icon="ri-file-excel-2-line" :disabled="busy || !initialized" @pick="handlePick(sourceField)" @reset="handleReset('mrWorkbook')" @reveal="handleReveal('mrWorkbook')" />
+          <p class="report-month"><span>报告月份</span><strong>{{ reportMonth }}</strong></p>
+        </section>
+
+        <section class="panel template-panel">
+          <button class="disclosure template-toggle" :aria-expanded="templatesOpen" aria-controls="template-fields" @click="templatesOpen = !templatesOpen">
+            <span><i aria-hidden="true" class="ri-stack-line" />模板与映射</span>
+            <small :class="{ ready: templateCount === 4 }"><i aria-hidden="true" :class="templateCount === 4 ? 'ri-checkbox-circle-fill' : 'ri-information-line'" /> {{ templateCount }}/4 {{ templateCount === 4 ? '已配置' : '待补齐' }}</small>
+            <i aria-hidden="true" :class="templatesOpen ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" />
+          </button>
+          <div v-show="templatesOpen" id="template-fields" class="template-fields">
+            <PathField v-for="item in templateFields" :key="item.key" compact :label="item.label" :description="item.description" :value="paths[item.key]" :default-value="defaultPaths[item.key]" :icon="item.key === 'pptTemplate' ? 'ri-file-ppt-2-line' : 'ri-file-excel-2-line'" :disabled="busy || !initialized" @pick="handlePick(item)" @reset="handleReset(item.key)" @reveal="handleReveal(item.key)" />
+            <p class="hint">手动选择，路径自动记住</p>
           </div>
         </section>
 
-        <section class="panel">
-          <header class="panel__head">
-            <span>输入文件</span>
-            <small>路径会自动记住</small>
-          </header>
-          <div class="path-grid">
-            <PathField
-              v-for="item in pathFields"
-              :key="item.key"
-              :label="item.label"
-              :description="item.description"
-              :value="paths[item.key]"
-              :default-value="defaultPaths[item.key] ?? ''"
-              icon="ri-file-list-3-line"
-              @pick="handlePick(item)"
-              @reveal="handleReveal(item.key)"
-              @reset="handleReset(item.key)"
-            />
-          </div>
+        <section class="panel" aria-label="输出目录">
+          <PathField :label="outputField.label" :description="outputField.description" :value="paths.outputDir" :default-value="defaultPaths.outputDir" icon="ri-folder-3-line" full-path :disabled="busy || !initialized" @pick="handlePick(outputField)" @reset="handleReset('outputDir')" @reveal="handleReveal('outputDir')" />
         </section>
 
-        <section class="content-grid">
-          <section class="panel">
-            <header class="panel__head">
-              <span>处理日志</span>
-              <small>逐步反馈执行进度</small>
-            </header>
-            <SimpleBarScroll class="log-list" content-class="simplebar-stack">
-              <div v-if="logs.length === 0" class="empty">还没开始运行，先把输入文件选好。</div>
-              <div v-for="(entry, index) in logs" :key="index" class="log-item" :class="entry.level">
-                <div class="log-item__dot" />
-                <div class="log-item__content">
-                  <strong>{{ entry.step }}</strong>
-                  <p>{{ entry.message }}</p>
-                </div>
-              </div>
+        <div class="generate-actions">
+          <button class="button button--primary generate-button" :disabled="busy || !initialized" @click="run">
+            <i aria-hidden="true" :class="running ? 'ri-loader-4-line spin' : 'ri-play-fill'" />
+            {{ running ? '正在生成…' : updateState.phase === 'installing' ? '正在安装更新…' : result ? '重新生成文件' : '生成月会文件' }}
+          </button>
+          <p class="hint">生成月会 Excel、人员 Excel 和 PPT</p>
+        </div>
+
+        <section class="panel progress-panel" aria-label="生成状态">
+          <header v-if="running || result || runError" class="panel__head"><strong>本次生成</strong><span class="state-pill" :class="{ error: runError, pending: running }">{{ running ? '处理中' : runError ? '失败' : '已完成' }}</span></header>
+          <div class="run-status" role="status" aria-live="polite">
+            <i aria-hidden="true" :class="runError ? 'ri-error-warning-fill error-text' : running ? 'ri-loader-4-line spin' : result || !missingFields.length ? 'ri-checkbox-circle-fill ready' : 'ri-information-line'" />
+            <div>
+              <strong>{{ runError ? '生成失败，请检查后重试' : running ? latestLog?.step || '准备生成文件' : result ? '3 个文件已生成' : missingFields.length ? `还需选择 ${missingFields.length} 项文件或目录` : '已就绪，可以生成' }}</strong>
+              <p v-if="runError" class="error-text" role="alert">{{ runError }}</p>
+              <p v-else-if="running">{{ latestLog?.message || '正在读取输入文件，请稍候…' }}</p>
+              <p v-else-if="result">用时 {{ elapsedSeconds }} 秒 · {{ result.detected.reportMonthLabel }}</p>
+              <p v-else>生成后在此查看结果</p>
+            </div>
+          </div>
+          <progress v-if="running" class="generation-progress" aria-label="文件生成进度" />
+          <template v-if="logs.length || runError">
+            <button class="disclosure log-toggle" :aria-expanded="logsOpen" aria-controls="process-log" @click="logsOpen = !logsOpen"><span>{{ logsOpen ? '收起处理日志' : '查看处理日志' }}</span><i aria-hidden="true" :class="logsOpen ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" /></button>
+            <SimpleBarScroll v-if="logsOpen" id="process-log" class="log-list" content-class="simplebar-stack">
+              <p v-if="!logs.length" class="hint">{{ runError }}</p>
+              <div v-for="(entry, index) in logs" :key="index" class="log-item" :class="entry.level"><span class="log-item__dot" /><div><strong>{{ entry.step }}</strong><p>{{ entry.message }}</p></div></div>
             </SimpleBarScroll>
-          </section>
-
-          <section class="panel">
-            <header class="panel__head">
-              <span>输出结果</span>
-              <small>生成后可直接定位</small>
-            </header>
-            <div v-if="!result" class="empty">这里会显示生成后的工作簿和 PPT。</div>
-            <SimpleBarScroll v-else class="result-stack" content-class="simplebar-stack">
-              <div class="result-card">
-                <div class="result-card__body">
-                  <strong>月会数据</strong>
-                  <p>{{ result.outputs.monthlyWorkbook }}</p>
-                </div>
-                <button type="button" class="icon-button" @click="revealOutput(result.outputs.monthlyWorkbook)">
-                  <i class="ri-folder-open-line" />
-                </button>
-              </div>
-              <div class="result-card">
-                <div class="result-card__body">
-                  <strong>人员数据</strong>
-                  <p>{{ result.outputs.staffWorkbook }}</p>
-                </div>
-                <button type="button" class="icon-button" @click="revealOutput(result.outputs.staffWorkbook)">
-                  <i class="ri-folder-open-line" />
-                </button>
-              </div>
-              <div class="result-card">
-                <div class="result-card__body">
-                  <strong>PPT 成品</strong>
-                  <p>{{ result.outputs.presentation }}</p>
-                </div>
-                <button type="button" class="icon-button" @click="revealOutput(result.outputs.presentation)">
-                  <i class="ri-folder-open-line" />
-                </button>
-              </div>
-              <div class="assumptions">
-                <strong>当前实现假设</strong>
-                <ul>
-                  <li v-for="item in result.assumptions" :key="item">{{ item }}</li>
-                </ul>
-              </div>
-            </SimpleBarScroll>
-          </section>
+          </template>
         </section>
-      </div>
-    </main>
+
+        <section v-if="result" class="panel results-panel" aria-label="生成结果">
+          <header class="panel__head"><strong>生成结果</strong></header>
+          <div v-for="file in outputFiles" :key="file.label" class="result-row">
+            <i aria-hidden="true" :class="file.icon" />
+            <div :title="file.path"><strong>{{ file.label }}</strong><span>{{ file.icon === 'ri-file-ppt-2-line' ? 'PPT' : 'Excel' }}</span></div>
+            <button class="icon-button" :aria-label="`打开${file.label}所在目录`" :title="file.path" @click="revealOutput(file.path)"><i aria-hidden="true" class="ri-folder-open-line" /></button>
+          </div>
+          <button class="button button--subtle open-output" @click="revealOutput(generatedDirectory)"><i aria-hidden="true" class="ri-folder-open-line" />打开输出目录</button>
+          <details v-if="result.assumptions.length" class="result-notes"><summary>生成说明 · {{ result.assumptions.length }} 项</summary><ul><li v-for="item in result.assumptions" :key="item">{{ item }}</li></ul></details>
+        </section>
+      </main>
+    </SimpleBarScroll>
+
+    <footer class="statusbar"><span><span class="status-dot" :class="{ warning: missingFields.length || runError }" />{{ statusText }}</span><span>v{{ updateState.currentVersion || '—' }}</span></footer>
 
     <transition name="drawer-fade">
       <div v-if="settingsOpen" class="drawer-backdrop" @click="settingsOpen = false" />
     </transition>
     <transition name="drawer-slide">
-      <aside v-if="settingsOpen" class="drawer">
+      <aside v-if="settingsOpen" ref="settingsDialog" class="drawer" role="dialog" aria-modal="true" aria-label="偏好设置" @keydown="handleDialogKey">
         <header class="drawer__head">
           <div>
             <strong>偏好设置</strong>
             <p>关闭行为、重点刊映射和汇总覆盖值</p>
           </div>
-          <button type="button" class="icon-button" @click="settingsOpen = false">
-            <i class="ri-close-line" />
+          <button type="button" class="icon-button" aria-label="关闭偏好设置" @click="settingsOpen = false">
+            <i aria-hidden="true" class="ri-close-line" />
           </button>
         </header>
 
@@ -563,771 +555,11 @@ onBeforeUnmount(() => {
 
     <div class="toast-wrap">
       <div v-for="toast in toasts" :key="toast.id" class="toast" :class="toast.tone">
-        <i :class="toast.tone === 'success' ? 'ri-checkbox-circle-line' : toast.tone === 'error' ? 'ri-error-warning-line' : 'ri-information-line'" />
+        <i aria-hidden="true" :class="toast.tone === 'success' ? 'ri-checkbox-circle-line' : toast.tone === 'error' ? 'ri-error-warning-line' : 'ri-information-line'" />
         <span>{{ toast.text }}</span>
       </div>
     </div>
   </div>
 </template>
 
-<style scoped>
-@font-face {
-  font-family: NotoSansSC;
-  src: url('./assets/NotoSansSC-Regular.woff2') format('woff2');
-  font-weight: 400;
-}
-
-:global(*) {
-  box-sizing: border-box;
-}
-
-:global(body) {
-  margin: 0;
-  font-family: NotoSansSC, 'Segoe UI', sans-serif;
-  line-height: 1.2;
-  background: #0d1117;
-  color: #1f2328;
-}
-
-:global(button),
-:global(input),
-:global(textarea) {
-  font: inherit;
-}
-
-.app-shell {
-  --accent: #0aa19e;
-  --accent-strong: hsla(179, 88%, 34%, 0.86);
-  --titlebar-bg: rgb(242, 244, 247);
-  --titlebar-height: 38px;
-  height: 100vh;
-  overflow: hidden;
-  background: #f6f8fa;
-}
-
-.app-shell :deep(.simplebar-track.simplebar-vertical) {
-  width: 10px;
-}
-
-.app-shell :deep(.simplebar-track.simplebar-horizontal) {
-  height: 10px;
-}
-
-.app-shell :deep(.simplebar-scrollbar::before) {
-  inset: 2px;
-  border-radius: 999px;
-  background: #8c959f;
-  opacity: 0;
-}
-
-.app-shell :deep(.simplebar-scrollbar.simplebar-visible::before) {
-  opacity: 0.86;
-}
-
-.topbar {
-  height: var(--titlebar-height);
-  padding: 0 8px;
-  border-bottom: 1px solid #d8dee4;
-  background: var(--titlebar-bg);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  user-select: none;
-  -webkit-app-region: drag;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.brand__mark {
-  width: 42px;
-  height: 42px;
-  border-radius: 10px;
-  overflow: hidden;
-  background: #e7fbfb;
-  /* box-shadow: 0 0 0 1px rgba(10, 161, 158, 0.14), 0 10px 22px rgba(10, 161, 158, 0.12); */
-}
-
-.brand__mark img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.brand p {
-  margin: 2px 0 0;
-  font-size: 11px;
-  color: #57606a;
-}
-
-.window-controls {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  height: 100%;
-  margin-left: auto;
-  -webkit-app-region: no-drag;
-}
-
-.titlebar-button {
-  width: 32px;
-  height: 28px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: #57606a;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  -webkit-app-region: no-drag;
-}
-
-.titlebar-button i {
-  font-size: 16px;
-}
-
-.titlebar-button:hover,
-.titlebar-button.active {
-  background: #dfe7ef;
-  color: #1f2328;
-}
-
-.titlebar-button.active {
-  color: #087f7c;
-}
-
-.titlebar-button--close:hover {
-  background: #da3633;
-  color: #ffffff;
-}
-
-.workspace-scroll {
-  height: calc(100vh - var(--titlebar-height));
-  overflow: auto;
-}
-
-.log-list > :deep(.simplebar-wrapper),
-.result-stack > :deep(.simplebar-wrapper),
-.drawer__body > :deep(.simplebar-wrapper) {
-  height: 100%;
-  max-height: 100%;
-}
-
-.workspace {
-  min-height: 100%;
-  padding: 12px;
-  display: grid;
-  grid-template-rows: auto auto minmax(280px, 1fr);
-  gap: 10px;
-}
-
-.panel {
-  border: 1px solid #d0d7de;
-  border-radius: 8px;
-  background: #fff;
-  padding: 12px;
-  min-height: 0;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.hero {
-  display: grid;
-  grid-template-columns: minmax(180px, 0.86fr) minmax(180px, 1fr) auto;
-  gap: 14px;
-  align-items: center;
-  padding: 14px 16px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbfb 100%);
-}
-
-.hero__brand {
-  min-width: 0;
-}
-
-.hero__brand strong {
-  display: block;
-  font-size: 18px;
-  line-height: 1.1;
-  color: #1f2328;
-}
-
-.eyebrow,
-.panel__head small,
-.empty,
-.result-card p,
-.assumptions li,
-.section-head small,
-.drawer__head p {
-  color: #1f2328;
-}
-
-.eyebrow {
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.hero__meta {
-  min-width: 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
-  align-items: stretch;
-}
-
-.hero__meta div {
-  min-width: 0;
-  border-left: 1px solid rgba(87, 96, 106, 1);
-  background: transparent;
-  padding: 3px 10px;
-  /* opacity: 0.72; */
-}
-
-.hero__meta strong {
-  display: block;
-  font-size: 13px;
-  line-height: 1.15;
-  color: #1f2328;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.hero__meta span {
-  display: block;
-  margin-top: 3px;
-  font-size: 10px;
-  line-height: 1.2;
-  color: #1f2328;
-}
-
-.hero__actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  justify-self: end;
-  min-width: 0;
-}
-
-.hero__actions .button {
-  min-height: 36px;
-  padding: 9px 13px;
-  transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, color 0.16s ease, transform 0.16s ease;
-}
-
-.hero__actions .button i {
-  font-size: 15px;
-}
-
-.hero__actions .button--primary {
-  min-width: 138px;
-}
-
-.panel__head,
-.section-head,
-.drawer__head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.panel__head {
-  margin-bottom: 10px;
-}
-
-.panel__head span,
-.section-head span,
-.drawer__head strong {
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.panel__head small,
-.section-head small {
-  font-size: 10px;
-}
-
-.path-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 6px;
-}
-
-@media (max-width: 1180px) {
-  .path-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-.content-grid {
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
-  gap: 10px;
-}
-
-.content-grid > .panel {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.log-list,
-.result-stack {
-  --simplebar-content-gap: 8px;
-  --simplebar-content-gutter: 14px;
-  flex: 1 1 0;
-  min-height: 0;
-  min-width: 0;
-}
-
-.log-list :deep(.simplebar-track.simplebar-vertical),
-.result-stack :deep(.simplebar-track.simplebar-vertical) {
-  right: 0;
-}
-
-.log-item {
-  display: grid;
-  grid-template-columns: 8px minmax(0, 1fr);
-  gap: 9px;
-  padding: 9px 10px;
-  border: 1px solid #d0d7de;
-  border-radius: 8px;
-  background: #f6f8fa;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.log-item__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-top: 4px;
-  background: #2f81f7;
-}
-
-.log-item.success .log-item__dot {
-  background: #1a7f37;
-}
-
-.log-item.warning .log-item__dot {
-  background: #9a6700;
-}
-
-.log-item.error .log-item__dot {
-  background: #cf222e;
-}
-
-.log-item__content {
-  min-width: 0;
-}
-
-.log-item strong {
-  display: block;
-  font-size: 11px;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.log-item p {
-  margin: 4px 0 0;
-  font-size: 11px;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  white-space: normal;
-}
-
-.result-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: flex-start;
-  gap: 10px;
-  padding: 10px;
-  border: 1px solid #d0d7de;
-  border-radius: 8px;
-  background: #f6f8fa;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.result-card__body {
-  min-width: 0;
-  flex: 1;
-}
-
-.result-card strong {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 12px;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.result-card p {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  white-space: normal;
-}
-
-.assumptions {
-  padding: 10px;
-  border: 1px solid #d0d7de;
-  border-radius: 8px;
-  background: #fff;
-  min-width: 0;
-  max-width: 100%;
-}
-
-.assumptions strong {
-  display: block;
-  margin-bottom: 8px;
-  font-size: 12px;
-}
-
-.assumptions ul {
-  margin: 0;
-  padding-left: 18px;
-  min-width: 0;
-}
-
-.assumptions li {
-  font-size: 11px;
-  line-height: 1.35;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.button,
-.icon-button {
-  border-radius: 6px;
-  border: 1px solid transparent;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  -webkit-app-region: no-drag;
-}
-
-.button {
-  padding: 8px 11px;
-  font-size: 11px;
-  font-weight: 700;
-  white-space: nowrap;
-}
-
-.button--primary {
-  background: var(--accent);
-  border-color: var(--accent-strong);
-  color: #fff;
-}
-
-.button--primary:hover:not(:disabled) {
-  background: var(--accent-strong);
-}
-
-.button--subtle {
-  background: #161b22;
-  color: #c9d1d9;
-  border-color: #30363d;
-}
-
-.button--light {
-  background: #f6f8fa;
-  color: #1f2328;
-  border-color: #d0d7de;
-}
-
-.button--light:hover:not(:disabled) {
-  background: #eef2f6;
-}
-
-.button:disabled {
-  opacity: 0.72;
-  cursor: wait;
-}
-
-.icon-button {
-  width: 28px;
-  height: 28px;
-  flex: none;
-  border: 1px solid #d0d7de;
-  background: #fff;
-  color: #57606a;
-}
-
-.empty {
-  min-height: 108px;
-  display: grid;
-  place-items: center;
-  text-align: center;
-  border: 1px dashed #d0d7de;
-  border-radius: 8px;
-  font-size: 11px;
-  line-height: 1.35;
-  padding: 12px;
-}
-
-.drawer-backdrop {
-  position: fixed;
-  inset: var(--titlebar-height) 0 0 0;
-  background: rgba(13, 17, 23, 0.34);
-  z-index: 50;
-}
-
-.drawer {
-  position: fixed;
-  top: var(--titlebar-height);
-  right: 0;
-  width: min(396px, 100vw);
-  height: calc(100vh - var(--titlebar-height));
-  background: #ffffff;
-  border-left: 1px solid #d0d7de;
-  z-index: 60;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-}
-
-.drawer__head {
-  padding: 14px 14px 12px;
-  border-bottom: 1px solid #d0d7de;
-}
-
-.drawer__head p {
-  margin: 5px 0 0;
-  font-size: 11px;
-}
-
-.drawer__body {
-  --simplebar-content-gutter: 14px;
-  height: 100%;
-  min-height: 0;
-  padding-bottom: 10px;
-}
-
-.drawer__body :deep(.simplebar-track.simplebar-vertical) {
-  right: 0;
-}
-
-.drawer-section {
-  padding: 12px 14px 0;
-}
-
-.update-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #2f81f7;
-}
-
-.drawer-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.drawer-grid--single {
-  grid-template-columns: 1fr;
-}
-
-.field {
-  display: grid;
-  gap: 6px;
-}
-
-.field label,
-.field span {
-  font-size: 11px;
-  font-weight: 700;
-  color: #1f2328;
-}
-
-.field input,
-.field textarea {
-  width: 100%;
-  border: 1px solid #d0d7de;
-  background: #fff;
-  color: #1f2328;
-  border-radius: 6px;
-  padding: 4px 10px;
-  line-height: 1.5;
-}
-
-.field input::placeholder,
-.field textarea::placeholder {
-  color: #8c959f;
-  font-size: 14px;
-}
-
-.field input:focus,
-.field textarea:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-} 
-
-.field textarea {
-  min-height: 112px;
-  resize: vertical;
-  overflow: hidden;
-  white-space: pre-wrap;
-}
-
-.field--textarea {
-  margin-top: 10px;
-}
-
-.drawer__foot {
-  padding: 12px 14px;
-  border-top: 1px solid #d0d7de;
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  background: #fff;
-}
-
-.toast-wrap {
-  position: fixed;
-  right: 18px;
-  bottom: 18px;
-  display: grid;
-  gap: 10px;
-  z-index: 80;
-}
-
-.toast {
-  position: relative;
-  min-width: 280px;
-  max-width: min(420px, calc(100vw - 36px));
-  padding: 12px 14px 12px 16px;
-  border-radius: 8px;
-  border: 1px solid #8c959f;
-  background: #ffffff;
-  color: #1f2328;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 12px;
-  line-height: 1.35;
-  font-weight: 700;
-  box-shadow: 0 18px 44px rgba(31, 35, 40, 0.22), 0 0 0 1px rgba(31, 35, 40, 0.04);
-}
-
-.toast::before {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 5px;
-  border-radius: 8px 0 0 8px;
-  background: #57606a;
-}
-
-.toast i {
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  font-size: 17px;
-  background: #f6f8fa;
-  color: #57606a;
-}
-
-.toast span {
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-.toast.success {
-  border-color: #0aa19e;
-  background: #f0fffd;
-}
-
-.toast.success::before {
-  background: var(--accent);
-}
-
-.toast.success i {
-  background: rgba(10, 161, 158, 0.12);
-  color: #087f7c;
-}
-
-.toast.error {
-  border-color: #cf222e;
-  background: #fff5f5;
-}
-
-.toast.error::before {
-  background: #cf222e;
-}
-
-.toast.error i {
-  background: rgba(207, 34, 46, 0.1);
-  color: #cf222e;
-}
-
-.toast.info {
-  border-color: #2f81f7;
-  background: #f1f8ff;
-}
-
-.toast.info::before {
-  background: #2f81f7;
-}
-
-.toast.info i {
-  background: rgba(47, 129, 247, 0.12);
-  color: #2f81f7;
-}
-
-.spin {
-  animation: spin 1s linear infinite;
-}
-
-.drawer-fade-enter-active,
-.drawer-fade-leave-active {
-  transition: opacity 0.18s ease;
-}
-
-.drawer-fade-enter-from,
-.drawer-fade-leave-to {
-  opacity: 0;
-}
-
-.drawer-slide-enter-active,
-.drawer-slide-leave-active {
-  transition: transform 0.2s ease;
-}
-
-.drawer-slide-enter-from,
-.drawer-slide-leave-to {
-  transform: translateX(100%);
-}
-
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-</style>
+<style scoped src="./styles/app.css"></style>

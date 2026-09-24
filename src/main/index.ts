@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, screen, shell, Tray } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import electronUpdater from 'electron-updater'
@@ -115,15 +115,16 @@ function sendWindowState(): void {
 }
 
 async function createWindow(): Promise<void> {
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize
   mainWindow = new BrowserWindow({
-    width: 1120,
-    height: 720,
-    minWidth: 1120,
-    minHeight: 720,
+    width: Math.min(430, width),
+    height: Math.min(760, height),
+    minWidth: Math.min(360, width),
+    minHeight: Math.min(480, height),
     title: 'DataDeck',
     frame: false,
     icon: windowIconPath(),
-    backgroundColor: '#0d1117',
+    backgroundColor: '#f4f7fa',
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.mjs'),
