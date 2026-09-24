@@ -60,19 +60,11 @@ h1 { font-size: 19px; letter-spacing: -.4px; margin: 0; font-weight: 700; }
 .run-status p { margin: 4px 0 0; color: #7a889b; font-size: 11px; overflow-wrap: anywhere; }
 .run-status .error-text { color: #b42b36; }
 .generation-progress { display: block; width: 100%; height: 4px; accent-color: var(--accent); margin-top: 10px; }
-.log-toggle { justify-content: space-between; margin-top: 8px; border-top: 1px solid #edf0f3; padding: 6px 0 0; font-size: 11px; }
-.log-list { display: grid; gap: 10px; margin-top: 10px; }
-.log-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid #edf0f3; padding-top: 8px; color: #738198; font-size: 10px; }
-.log-pagination > div { display: flex; gap: 4px; }
-.log-pagination button { min-width: 26px; height: 25px; border: 1px solid #dce3e9; border-radius: 4px; background: white; color: #087f7c; cursor: pointer; }
-.log-pagination button:hover:not(:disabled) { background: #e5efef; }
-.log-pagination button:disabled { opacity: .4; cursor: default; }
-.log-item { display: grid; grid-template-columns: 5px minmax(0, 1fr); gap: 7px; font-size: 11px; overflow-wrap: anywhere; }
-.log-item__dot { width: 5px; height: 5px; border-radius: 50%; background: #8d9aab; margin-top: 6px; }
-.log-item.success .log-item__dot { background: #268453; }
-.log-item.error .log-item__dot { background: #c13843; }
-.log-item.warning .log-item__dot { background: #b78025; }
-.log-item p { margin: 2px 0 0; color: #738198; }
+.issue-notice { margin-top: 8px; border-top: 1px solid #edf0f3; padding-top: 8px; }
+.issue-summary { display: flex; align-items: flex-start; gap: 6px; margin: 0 0 6px; color: #94631c; font-size: 11px; }
+.issue-toggle { justify-content: space-between; padding: 0; color: #53627a; font-size: 11px; }
+.issue-details { display: grid; gap: 10px; margin-top: 8px; font-size: 11px; overflow-wrap: anywhere; }
+.issue-details p { margin: 2px 0 0; color: #738198; white-space: pre-wrap; }
 .results-panel .panel__head { margin-bottom: 2px; }
 .result-row { display: flex; align-items: center; gap: 8px; min-width: 0; padding-block: 3px; border-top: 1px solid #edf0f3; }
 .result-row > i { font-size: 22px; color: #16835b; }

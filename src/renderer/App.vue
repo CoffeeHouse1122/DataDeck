@@ -44,7 +44,8 @@ const running = ref(false)
 const updateState = ref<AppUpdateState>({ phase: 'disabled', currentVersion: '', message: '正在读取版本信息…', generationRunning: false })
 const updateActionPending = ref(false)
 const settingsOpen = ref(false)
-const logs = ref<PipelineProgressEvent[]>([])
+const issues = ref<PipelineProgressEvent[]>([])
+const currentStep = ref('准备生成文件')
 const result = ref<PipelineResult | null>(null)
 const toasts = ref<Toast[]>([])
 const windowState = reactive<WindowState>({
@@ -55,7 +56,7 @@ const sourceField = PATH_FIELD_META.find((item) => item.key === 'mrWorkbook')!
 const outputField = PATH_FIELD_META.find((item) => item.key === 'outputDir')!
 const templateFields = PATH_FIELD_META.filter((item) => !['mrWorkbook', 'outputDir'].includes(item.key))
 const templatesOpen = ref(false)
-const logsOpen = ref(false)
+const detailsOpen = ref(false)
 const initialized = ref(false)
 const runError = ref('')
 const elapsedSeconds = ref(0)
@@ -63,17 +64,31 @@ const settingsDialog = ref<HTMLElement | null>(null)
 const settingsTrigger = ref<HTMLButtonElement | null>(null)
 const busy = computed(() => running.value || updateState.value.generationRunning || updateState.value.phase === 'installing')
 const templateCount = computed(() => templateFields.filter((item) => paths[item.key]).length)
-const latestLog = computed(() => logs.value.at(-1))
-const LOG_PAGE_SIZE = 3
-const logPage = ref(1)
-const followLatestLogs = ref(true)
-const logPageCount = computed(() => Math.max(1, Math.ceil(logs.value.length / LOG_PAGE_SIZE)))
-const visibleLogs = computed(() => logs.value.slice((logPage.value - 1) * LOG_PAGE_SIZE, logPage.value * LOG_PAGE_SIZE))
-
-function goToLogPage(page: number): void {
-  logPage.value = Math.max(1, Math.min(page, logPageCount.value))
-  followLatestLogs.value = logPage.value === logPageCount.value
+const stepLabels: Record<string, string> = {
+  bootstrap: '正在读取输入文件',
+  excel: '正在生成月会 Excel',
+  staff: '正在生成人员 Excel',
+  ppt: '正在生成 PPT',
+  done: '正在完成生成'
 }
+const errorSummary = computed(() => /EBUSY|文件被占用/i.test(runError.value)
+  ? '文件被占用，请关闭相关文件后重试。'
+  : /ENOENT/i.test(runError.value)
+    ? '找不到所需文件，请检查所选路径后重试。'
+    : '未能完成生成，请查看详情并检查输入文件和输出目录。')
+const issueSummary = computed(() => issues.value.length && issues.value.every((entry) => entry.message.startsWith('Missing journal mapping:'))
+  ? '部分人员缺少期刊映射，请检查映射表。'
+  : `有 ${issues.value.length} 项需核对的信息，请查看详情。`)
+const issueDetails = computed(() => {
+  const entries = issues.value.map((entry) => ({
+    label: entry.level === 'error' ? '错误' : '需核对',
+    message: entry.message.replace(/^Missing journal mapping:/, '缺少期刊映射：')
+  }))
+  if (runError.value && !issues.value.some((entry) => entry.message === runError.value)) {
+    entries.push({ label: '错误', message: runError.value })
+  }
+  return entries
+})
 
 const reportMonth = computed(() => {
   const name = paths.mrWorkbook.split(/[\\/]/).at(-1) ?? ''
@@ -288,10 +303,9 @@ async function run(): Promise<void> {
 
   running.value = true
   result.value = null
-  logs.value = []
-  logPage.value = 1
-  followLatestLogs.value = true
-  logsOpen.value = false
+  issues.value = []
+  currentStep.value = '准备生成文件'
+  detailsOpen.value = false
   runError.value = ''
   const started = Date.now()
 
@@ -304,12 +318,10 @@ async function run(): Promise<void> {
       forceAeStaff: formatForceAeStaff(),
       summaryOverrides: snapshotSummaryOverrides()
     })
-    pushToast('月会文件已经生成完成。', 'success')
+    pushToast(issues.value.length ? '文件已生成，有需核对的信息。' : '月会文件已经生成完成。', issues.value.length ? 'info' : 'success')
   } catch (error) {
-    runError.value = error instanceof Error ? error.message : '生成失败，请查看日志。'
-    logsOpen.value = true
-    goToLogPage(logPageCount.value)
-    pushToast(runError.value, 'error')
+    runError.value = error instanceof Error ? error.message : String(error || '生成失败，未返回错误详情。')
+    pushToast(errorSummary.value, 'error')
   } finally {
     elapsedSeconds.value = Math.max(1, Math.round((Date.now() - started) / 1000))
     running.value = false
@@ -346,9 +358,12 @@ onMounted(async () => {
     await nextTick()
     resizeForceAeStaffTextarea()
     unlisten = window.electronApi.onPipelineProgress((event) => {
-      logs.value = [...logs.value, event]
-      if (followLatestLogs.value) logPage.value = logPageCount.value
-      if (event.level === 'error' || event.level === 'warning') logsOpen.value = true
+      if (!running.value) return
+      if (event.level === 'error' || event.level === 'warning') {
+        issues.value = [...issues.value, event]
+      } else {
+        currentStep.value = stepLabels[event.step] ?? '正在处理文件'
+      }
     })
     unlistenWindowState = window.electronApi.onWindowStateChange((state) => {
       Object.assign(windowState, state)
@@ -421,29 +436,21 @@ onBeforeUnmount(() => {
           <div class="run-status" role="status" aria-live="polite">
             <i aria-hidden="true" :class="runError ? 'ri-error-warning-fill error-text' : running ? 'ri-loader-4-line spin' : result || !missingFields.length ? 'ri-checkbox-circle-fill ready' : 'ri-information-line'" />
             <div>
-              <strong>{{ runError ? '生成失败，请检查后重试' : running ? latestLog?.step || '准备生成文件' : result ? '3 个文件已生成' : missingFields.length ? `还需选择 ${missingFields.length} 项文件或目录` : '已就绪，可以生成' }}</strong>
-              <p v-if="runError" class="error-text" role="alert">{{ runError }}</p>
-              <p v-else-if="running">{{ latestLog?.message || '正在读取输入文件，请稍候…' }}</p>
+              <strong>{{ runError ? '生成失败，请检查后重试' : running ? currentStep : result ? '3 个文件已生成' : missingFields.length ? `还需选择 ${missingFields.length} 项文件或目录` : '已就绪，可以生成' }}</strong>
+              <p v-if="runError" class="error-text" role="alert">{{ errorSummary }}</p>
+              <p v-else-if="running">请稍候…</p>
               <p v-else-if="result">用时 {{ elapsedSeconds }} 秒 · {{ result.detected.reportMonthLabel }}</p>
               <p v-else>生成后在此查看结果</p>
             </div>
           </div>
           <progress v-if="running" class="generation-progress" aria-label="文件生成进度" />
-          <template v-if="logs.length || runError">
-            <button class="disclosure log-toggle" :aria-expanded="logsOpen" aria-controls="process-log" @click="logsOpen = !logsOpen"><span>{{ logsOpen ? '收起处理日志' : '查看处理日志' }}</span><i aria-hidden="true" :class="logsOpen ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" /></button>
-            <div v-if="logsOpen" id="process-log" class="log-list">
-              <p v-if="!logs.length" class="hint">{{ runError }}</p>
-              <div v-for="(entry, index) in visibleLogs" :key="(logPage - 1) * LOG_PAGE_SIZE + index" class="log-item" :class="entry.level"><span class="log-item__dot" /><div><strong>{{ entry.step }}</strong><p>{{ entry.message }}</p></div></div>
-              <nav v-if="logs.length" class="log-pagination" aria-label="处理日志分页">
-                <span aria-live="polite">{{ logPage }}/{{ logPageCount }} 页 · {{ logs.length }} 条</span>
-                <div>
-                  <button :disabled="logPage === 1" aria-label="上一页日志" @click="goToLogPage(logPage - 1)"><i aria-hidden="true" class="ri-arrow-left-s-line" /></button>
-                  <button :disabled="logPage === logPageCount" aria-label="下一页日志" @click="goToLogPage(logPage + 1)"><i aria-hidden="true" class="ri-arrow-right-s-line" /></button>
-                  <button :disabled="followLatestLogs" @click="goToLogPage(logPageCount)">最新</button>
-                </div>
-              </nav>
+          <div v-if="issueDetails.length" class="issue-notice">
+            <p v-if="issues.length" class="issue-summary" role="status"><i aria-hidden="true" class="ri-error-warning-line" />{{ issueSummary }}</p>
+            <button class="disclosure issue-toggle" :aria-expanded="detailsOpen" aria-controls="issue-details" @click="detailsOpen = !detailsOpen"><span>{{ detailsOpen ? '收起详情' : '查看详情' }}</span><i aria-hidden="true" :class="detailsOpen ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" /></button>
+            <div v-if="detailsOpen" id="issue-details" class="issue-details">
+              <div v-for="(entry, index) in issueDetails" :key="index"><strong>{{ entry.label }}</strong><p>{{ entry.message }}</p></div>
             </div>
-          </template>
+          </div>
         </section>
 
         <section v-if="result" class="panel results-panel" aria-label="生成结果">
