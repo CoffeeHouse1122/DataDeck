@@ -1,6 +1,6 @@
 {
   "name": "datadeck",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": true,
   "description": "Windows desktop app for monthly data processing and PPT generation.",
   "main": "dist-electron/main/index.js",
