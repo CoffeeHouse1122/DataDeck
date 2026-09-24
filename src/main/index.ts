@@ -119,8 +119,9 @@ async function createWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
     width: Math.min(430, width),
     height: Math.min(760, height),
-    minWidth: Math.min(360, width),
-    minHeight: Math.min(480, height),
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
     title: 'DataDeck',
     frame: false,
     icon: windowIconPath(),
@@ -261,12 +262,7 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('window:toggle-maximize', () => {
-    if (mainWindow?.isMaximized()) {
-      mainWindow.unmaximize()
-    } else {
-      mainWindow?.maximize()
-    }
-    sendWindowState()
+    // Keep the existing IPC contract without allowing the fixed-size window to maximize.
     return getWindowState()
   })
 
