@@ -28,6 +28,7 @@ h1 { font-size: 19px; letter-spacing: -.4px; margin: 0; font-weight: 700; }
 .report-month { display: flex; align-items: center; gap: 12px; color: #778498; font-size: 11px; margin: 8px 0 0; }
 .report-month strong { color: #59687e; font-weight: 400; }
 .hint { color: #78869b; font-size: 11px; margin: 6px 0 0; line-height: 1.5; }
+.override-notice { color: #94631c; }
 .template-panel { padding: 0; }
 .disclosure { border: 0; width: 100%; background: transparent; display: flex; align-items: center; gap: 8px; color: inherit; text-align: left; cursor: pointer; }
 .template-toggle { padding: 10px; min-height: 44px; }
@@ -91,7 +92,6 @@ h1 { font-size: 19px; letter-spacing: -.4px; margin: 0; font-weight: 700; }
 .section-head span { font-size: 12px; font-weight: 650; }
 .section-head small { font-size: 10px; color: #7a889b; }
 .drawer-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
-.drawer-grid--single { grid-template-columns: 1fr; }
 .field { display: grid; gap: 6px; min-width: 0; }
 .field label, .field span { font-size: 11px; font-weight: 500; }
 .field input, .field textarea { width: 100%; min-width: 0; border: 1px solid #dce3e9; background: white; color: #24303f; border-radius: 5px; padding: 7px 8px; line-height: 1.5; font-size: 12px; }

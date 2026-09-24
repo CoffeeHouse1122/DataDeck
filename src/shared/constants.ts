@@ -1,11 +1,3 @@
-export const FOCUS_JOURNAL_OPTIONS = [
-  { label: 'Foods', value: 'Foods' },
-  { label: 'Nutrients', value: 'Nutrients' },
-  { label: 'Children', value: 'Children' },
-  { label: 'Genes', value: 'Genes' },
-  { label: 'BS / Brain Sciences', value: 'BS' }
-]
-
 export const PATH_FIELD_META = [
   {
     key: 'mrWorkbook',

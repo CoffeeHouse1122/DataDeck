@@ -5,7 +5,7 @@ import PathField from './components/PathField.vue'
 import SimpleBarScroll from './components/SimpleBarScroll.vue'
 import UpdatePanel from './components/UpdatePanel.vue'
 import brandIconUrl from '../../resources/icons/favicon-256x256.png'
-import { FOCUS_JOURNAL_OPTIONS, PATH_FIELD_META } from '../shared/constants'
+import { PATH_FIELD_META } from '../shared/constants'
 import {
   DEFAULT_FOCUS_JOURNAL_ORDER,
   DEFAULT_FORCE_AE_STAFF,
@@ -36,10 +36,10 @@ const paths = reactive<SelectedPaths>({
 const defaultPaths = reactive<Partial<SelectedPaths>>({})
 
 const closeBehavior = ref<AppPreferences['closeBehavior']>('tray')
-const focusJournalOrder = ref<string[]>([...DEFAULT_FOCUS_JOURNAL_ORDER])
 const forceAeStaffInput = ref('')
 const forceAeStaffTextarea = ref<HTMLTextAreaElement | null>(null)
 const summaryOverrides = reactive<SummaryOverrides>({ ...DEFAULT_SUMMARY_OVERRIDES })
+const hasSummaryOverrides = computed(() => Object.values(summaryOverrides).some((value) => Boolean(value)))
 const running = ref(false)
 const updateState = ref<AppUpdateState>({ phase: 'disabled', currentVersion: '', message: '正在读取版本信息…', generationRunning: false })
 const updateActionPending = ref(false)
@@ -208,7 +208,6 @@ function applyPreferences(preferences: AppPreferences): void {
     outputDir: preferences.paths.outputDir ?? ''
   })
   closeBehavior.value = preferences.closeBehavior
-  focusJournalOrder.value = [...(preferences.focusJournalOrder?.length ? preferences.focusJournalOrder : DEFAULT_FOCUS_JOURNAL_ORDER)]
   forceAeStaffInput.value = [...(preferences.forceAeStaff?.length ? preferences.forceAeStaff : DEFAULT_FORCE_AE_STAFF)].join('\n')
   Object.assign(summaryOverrides, {
     ...DEFAULT_SUMMARY_OVERRIDES,
@@ -261,7 +260,7 @@ async function savePreferences(showToast = true): Promise<void> {
   await window.electronApi.savePreferences({
     paths: snapshotPaths(),
     closeBehavior: closeBehavior.value,
-    focusJournalOrder: [...focusJournalOrder.value],
+    focusJournalOrder: [...DEFAULT_FOCUS_JOURNAL_ORDER],
     forceAeStaff,
     summaryOverrides: snapshotSummaryOverrides()
   })
@@ -314,7 +313,7 @@ async function run(): Promise<void> {
     result.value = await window.electronApi.runPipeline({
       paths: snapshotPaths(),
       closeBehavior: closeBehavior.value,
-      focusJournalOrder: [...focusJournalOrder.value],
+      focusJournalOrder: [...DEFAULT_FOCUS_JOURNAL_ORDER],
       forceAeStaff: formatForceAeStaff(),
       summaryOverrides: snapshotSummaryOverrides()
     })
@@ -428,7 +427,7 @@ onBeforeUnmount(() => {
             <i aria-hidden="true" :class="running ? 'ri-loader-4-line spin' : 'ri-play-fill'" />
             {{ running ? '正在生成…' : updateState.phase === 'installing' ? '正在安装更新…' : result ? '重新生成文件' : '生成月会文件' }}
           </button>
-          <p class="hint">生成月会 Excel、人员 Excel 和 PPT</p>
+          <p class="hint" :class="{ 'override-notice': hasSummaryOverrides }">{{ hasSummaryOverrides ? '已启用手动修正 · 将覆盖对应的 MR 自动汇总值' : '生成月会 Excel、人员 Excel 和 PPT' }}</p>
         </div>
 
         <section class="panel progress-panel" aria-label="生成状态">
@@ -477,7 +476,7 @@ onBeforeUnmount(() => {
         <header class="drawer__head">
           <div>
             <strong>偏好设置</strong>
-            <p>关闭行为、重点刊映射和汇总覆盖值</p>
+            <p>关闭行为、强制 AE 名单和科室概览手动修正</p>
           </div>
           <button type="button" class="icon-button" aria-label="关闭偏好设置" @click="settingsOpen = false">
             <i aria-hidden="true" class="ri-close-line" />
@@ -493,19 +492,6 @@ onBeforeUnmount(() => {
               <span>关闭行为</span>
               <CustomSelect v-model="closeBehavior" :options="[...closeBehaviorOptions]" />
             </label>
-          </section>
-
-          <section class="drawer-section">
-            <header class="section-head">
-              <span>重点刊映射</span>
-              <small>用于图表页 8 / 10 / 12 / 14 / 16</small>
-            </header>
-            <div class="drawer-grid drawer-grid--single">
-              <div v-for="(value, index) in focusJournalOrder" :key="index" class="field">
-                <label>图表页 {{ index + 1 }}</label>
-                <CustomSelect v-model="focusJournalOrder[index]" :options="FOCUS_JOURNAL_OPTIONS" />
-              </div>
-            </div>
           </section>
 
           <section class="drawer-section">
@@ -528,9 +514,10 @@ onBeforeUnmount(() => {
 
           <section class="drawer-section">
             <header class="section-head">
-              <span>科室概览覆盖值</span>
+              <span>科室概览手动修正</span>
               <small>留空则按 MR 自动汇总</small>
             </header>
+            <p class="hint" :class="{ 'override-notice': hasSummaryOverrides }">{{ hasSummaryOverrides ? '已启用手动修正；保存后会沿用到后续生成，清空对应字段可恢复自动汇总。' : '仅在需要人工修正时填写，保存后会沿用到后续生成。' }}</p>
             <div class="drawer-grid">
               <label class="field">
                 <span>报告月份标题</span>
@@ -553,7 +540,7 @@ onBeforeUnmount(() => {
                 <input v-model="summaryOverrides.siSetUp" placeholder="数量" />
               </label>
               <label class="field">
-                <span>营收 WCHF</span>
+                <span>Invoice（万 CHF）</span>
                 <input v-model="summaryOverrides.revenueWCHF" placeholder="例如 127.77" />
               </label>
               <label class="field">

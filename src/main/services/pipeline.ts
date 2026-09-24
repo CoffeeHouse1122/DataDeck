@@ -4,6 +4,7 @@ import JSZip from 'jszip'
 import { XMLBuilder, XMLParser } from 'fast-xml-parser'
 import type { IpcMainInvokeEvent } from 'electron'
 import type { PipelineInput, PipelineProgressEvent, PipelineResult } from '../../shared/contracts'
+import { DEFAULT_FOCUS_JOURNAL_ORDER } from '../../shared/contracts'
 import { buildPresentation } from './ppt'
 import { interpolateColor, renderTableSvg, renderWorksheetRangeSvg } from './svg'
 import {
@@ -12,7 +13,6 @@ import {
   compactName,
   deepClone,
   detectReportKey,
-  ensureArrayLength,
   monthLabelFromKey,
   normalizeNumber,
   normalizePersonName,
@@ -3251,7 +3251,7 @@ export async function runPipeline(event: IpcMainInvokeEvent, input: PipelineInpu
   const departmentSheet = getWorksheetOrThrow(monthlyWorkbook, '\u79d1\u5ba4\u6570\u636e')
   populateDepartmentSheet(departmentSheet, departmentMetrics, context)
 
-  const focusOrder = ensureArrayLength(input.focusJournalOrder, 5, () => 'Foods')
+  const focusOrder = DEFAULT_FOCUS_JOURNAL_ORDER
   const focusSeries: FocusJournalSeries[] = []
   for (const sheetName of focusOrder) {
     const worksheet = getWorksheetOrThrow(monthlyWorkbook, sheetName)

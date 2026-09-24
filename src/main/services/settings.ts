@@ -49,7 +49,7 @@ export async function loadPreferences(userDataPath: string, retiredPaths: Partia
       ...createDefaultPreferences(),
       ...parsed,
       paths: migrateTemplatePaths(parsed.paths ?? {}, retiredPaths),
-      focusJournalOrder: parsed.focusJournalOrder?.length ? parsed.focusJournalOrder : [...DEFAULT_FOCUS_JOURNAL_ORDER],
+      focusJournalOrder: [...DEFAULT_FOCUS_JOURNAL_ORDER],
       forceAeStaff: parsed.forceAeStaff?.length ? parsed.forceAeStaff : [...DEFAULT_FORCE_AE_STAFF],
       summaryOverrides: {
         ...DEFAULT_SUMMARY_OVERRIDES,
@@ -64,5 +64,5 @@ export async function loadPreferences(userDataPath: string, retiredPaths: Partia
 export async function savePreferences(userDataPath: string, preferences: AppPreferences): Promise<void> {
   const filePath = path.join(userDataPath, SETTINGS_FILE)
   await fs.mkdir(userDataPath, { recursive: true })
-  await fs.writeFile(filePath, JSON.stringify(preferences, null, 2), 'utf8')
+  await fs.writeFile(filePath, JSON.stringify({ ...preferences, focusJournalOrder: [...DEFAULT_FOCUS_JOURNAL_ORDER] }, null, 2), 'utf8')
 }
