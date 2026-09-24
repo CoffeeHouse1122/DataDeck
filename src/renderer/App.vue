@@ -64,6 +64,17 @@ const settingsTrigger = ref<HTMLButtonElement | null>(null)
 const busy = computed(() => running.value || updateState.value.generationRunning || updateState.value.phase === 'installing')
 const templateCount = computed(() => templateFields.filter((item) => paths[item.key]).length)
 const latestLog = computed(() => logs.value.at(-1))
+const LOG_PAGE_SIZE = 3
+const logPage = ref(1)
+const followLatestLogs = ref(true)
+const logPageCount = computed(() => Math.max(1, Math.ceil(logs.value.length / LOG_PAGE_SIZE)))
+const visibleLogs = computed(() => logs.value.slice((logPage.value - 1) * LOG_PAGE_SIZE, logPage.value * LOG_PAGE_SIZE))
+
+function goToLogPage(page: number): void {
+  logPage.value = Math.max(1, Math.min(page, logPageCount.value))
+  followLatestLogs.value = logPage.value === logPageCount.value
+}
+
 const reportMonth = computed(() => {
   const name = paths.mrWorkbook.split(/[\\/]/).at(-1) ?? ''
   const match = name.match(/^MR_\d{6}-(\d{4})(\d{2})\.xlsx$/i)
@@ -278,6 +289,8 @@ async function run(): Promise<void> {
   running.value = true
   result.value = null
   logs.value = []
+  logPage.value = 1
+  followLatestLogs.value = true
   logsOpen.value = false
   runError.value = ''
   const started = Date.now()
@@ -295,6 +308,7 @@ async function run(): Promise<void> {
   } catch (error) {
     runError.value = error instanceof Error ? error.message : '生成失败，请查看日志。'
     logsOpen.value = true
+    goToLogPage(logPageCount.value)
     pushToast(runError.value, 'error')
   } finally {
     elapsedSeconds.value = Math.max(1, Math.round((Date.now() - started) / 1000))
@@ -333,6 +347,7 @@ onMounted(async () => {
     resizeForceAeStaffTextarea()
     unlisten = window.electronApi.onPipelineProgress((event) => {
       logs.value = [...logs.value, event]
+      if (followLatestLogs.value) logPage.value = logPageCount.value
       if (event.level === 'error' || event.level === 'warning') logsOpen.value = true
     })
     unlistenWindowState = window.electronApi.onWindowStateChange((state) => {
@@ -416,10 +431,18 @@ onBeforeUnmount(() => {
           <progress v-if="running" class="generation-progress" aria-label="文件生成进度" />
           <template v-if="logs.length || runError">
             <button class="disclosure log-toggle" :aria-expanded="logsOpen" aria-controls="process-log" @click="logsOpen = !logsOpen"><span>{{ logsOpen ? '收起处理日志' : '查看处理日志' }}</span><i aria-hidden="true" :class="logsOpen ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" /></button>
-            <SimpleBarScroll v-if="logsOpen" id="process-log" class="log-list" content-class="simplebar-stack">
+            <div v-if="logsOpen" id="process-log" class="log-list">
               <p v-if="!logs.length" class="hint">{{ runError }}</p>
-              <div v-for="(entry, index) in logs" :key="index" class="log-item" :class="entry.level"><span class="log-item__dot" /><div><strong>{{ entry.step }}</strong><p>{{ entry.message }}</p></div></div>
-            </SimpleBarScroll>
+              <div v-for="(entry, index) in visibleLogs" :key="(logPage - 1) * LOG_PAGE_SIZE + index" class="log-item" :class="entry.level"><span class="log-item__dot" /><div><strong>{{ entry.step }}</strong><p>{{ entry.message }}</p></div></div>
+              <nav v-if="logs.length" class="log-pagination" aria-label="处理日志分页">
+                <span aria-live="polite">{{ logPage }}/{{ logPageCount }} 页 · {{ logs.length }} 条</span>
+                <div>
+                  <button :disabled="logPage === 1" aria-label="上一页日志" @click="goToLogPage(logPage - 1)"><i aria-hidden="true" class="ri-arrow-left-s-line" /></button>
+                  <button :disabled="logPage === logPageCount" aria-label="下一页日志" @click="goToLogPage(logPage + 1)"><i aria-hidden="true" class="ri-arrow-right-s-line" /></button>
+                  <button :disabled="followLatestLogs" @click="goToLogPage(logPageCount)">最新</button>
+                </div>
+              </nav>
+            </div>
           </template>
         </section>
 
