@@ -14,8 +14,7 @@
 .window-brand img { width: 20px; height: 20px; object-fit: contain; }
 .window-controls { display: flex; height: 100%; -webkit-app-region: no-drag; }
 .titlebar-button { width: 32px; padding: 0; border: 0; color: #415067; background: transparent; cursor: pointer; font-size: 15px; }
-.titlebar-button:hover { background: #e5efef; color: #087f7c; }
-.titlebar-button.active { background: #edf2ff; color: #315efb; }
+.titlebar-button:hover, .titlebar-button.active { background: #e5efef; color: #087f7c; }
 .titlebar-button--close:hover { background: #cf343d; color: white; }
 .titlebar-button:disabled { opacity: .4; cursor: default; }
 .workspace-scroll { min-height: 0; height: 100%; }
