@@ -454,13 +454,15 @@ onBeforeUnmount(() => {
         </section>
 
         <section v-if="result" class="panel results-panel" aria-label="生成结果">
-          <header class="panel__head"><strong>生成结果</strong></header>
+          <header class="panel__head">
+            <strong>生成结果</strong>
+            <button class="button button--subtle open-output" @click="revealOutput(generatedDirectory)"><i aria-hidden="true" class="ri-folder-open-line" />打开输出目录</button>
+          </header>
           <div v-for="file in outputFiles" :key="file.label" class="result-row">
             <i aria-hidden="true" :class="file.icon" />
             <div :title="file.path"><strong>{{ file.label }}</strong><span>{{ file.icon === 'ri-file-ppt-2-line' ? 'PPT' : 'Excel' }}</span></div>
             <button class="icon-button" :aria-label="`打开${file.label}所在目录`" :title="file.path" @click="revealOutput(file.path)"><i aria-hidden="true" class="ri-folder-open-line" /></button>
           </div>
-          <button class="button button--subtle open-output" @click="revealOutput(generatedDirectory)"><i aria-hidden="true" class="ri-folder-open-line" />打开输出目录</button>
         </section>
       </main>
     </SimpleBarScroll>
