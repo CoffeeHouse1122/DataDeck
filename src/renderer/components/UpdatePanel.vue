@@ -32,8 +32,8 @@ small { color: #57606a; font-variant-numeric: tabular-nums; font-weight: 400; }
 p { margin: 10px 0; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
 .hint { color: #57606a; }
 progress { width: 100%; height: 6px; accent-color: #2f81f7; display: block; margin: 12px 0; }
-button { border: 1px solid #388bfd66; border-radius: 6px; background: #1f6feb; color: #fff; font: inherit; font-size: 12px; padding: 7px 12px; cursor: pointer; }
-button:hover:not(:disabled) { background: #388bfd; }
-button:disabled { opacity: .45; cursor: default; }
-button:focus-visible { outline: 2px solid #79c0ff; outline-offset: 3px; }
+button { border: 1px solid var(--accent, #0aa19e); border-radius: 6px; background: var(--accent, #0aa19e); color: #fff; font: inherit; font-size: 12px; padding: 7px 12px; cursor: pointer; }
+button:hover:not(:disabled) { background: var(--accent-strong, #088784); }
+button:disabled { opacity: .5; cursor: default; }
+button:focus-visible { outline: 2px solid var(--accent, #0aa19e); outline-offset: 2px; }
 </style>
