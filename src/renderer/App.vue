@@ -186,7 +186,7 @@ function resizeForceAeStaffTextarea(): void {
       return
     }
     element.style.height = 'auto'
-    element.style.height = `${Math.max(112, element.scrollHeight)}px`
+    element.style.height = `${Math.max(90, element.scrollHeight)}px`
   })
 }
 
@@ -476,7 +476,6 @@ onBeforeUnmount(() => {
         <header class="drawer__head">
           <div>
             <strong>偏好设置</strong>
-            <p>关闭行为、强制 AE 名单和科室概览手动修正</p>
           </div>
           <button type="button" class="icon-button" aria-label="关闭偏好设置" @click="settingsOpen = false">
             <i aria-hidden="true" class="ri-close-line" />
@@ -488,7 +487,7 @@ onBeforeUnmount(() => {
             <UpdatePanel :state="updateState" :pending="updateActionPending" :running="running" @action="handleUpdate" />
           </section>
           <section class="drawer-section">
-            <label class="field">
+            <label class="field field--inline">
               <span>关闭行为</span>
               <CustomSelect v-model="closeBehavior" :options="[...closeBehaviorOptions]" />
             </label>

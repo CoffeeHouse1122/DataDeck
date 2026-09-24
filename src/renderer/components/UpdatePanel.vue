@@ -25,14 +25,14 @@ defineEmits<{ action: [value: 'check' | 'download' | 'install'] }>()
 </template>
 
 <style scoped>
-.app-update { border: 1px solid #d0d7de; border-radius: 9px; padding: 14px; background: #f6f8fa; color: #24292f; }
+.app-update { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; border: 1px solid #d0d7de; border-radius: 9px; padding: 10px; background: #f6f8fa; color: #24292f; }
 header { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 13px; font-weight: 600; }
 header i { color: #0969da; margin-right: 4px; }
 small { color: #57606a; font-variant-numeric: tabular-nums; font-weight: 400; }
-p { margin: 10px 0; font-size: 12px; line-height: 1.7; overflow-wrap: anywhere; }
-.hint { color: #57606a; }
-progress { width: 100%; height: 6px; accent-color: #2f81f7; display: block; margin: 12px 0; }
-button { border: 1px solid var(--accent, #0aa19e); border-radius: 6px; background: var(--accent, #0aa19e); color: #fff; font: inherit; font-size: 12px; padding: 7px 12px; cursor: pointer; }
+p { margin: 0; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.hint { grid-column: 1 / -1; color: #57606a; }
+progress { grid-column: 1 / -1; width: 100%; height: 6px; accent-color: #2f81f7; display: block; margin: 4px 0; }
+button { grid-column: 2; grid-row: 1 / 3; align-self: center; border: 1px solid var(--accent, #0aa19e); border-radius: 6px; background: var(--accent, #0aa19e); color: #fff; font: inherit; font-size: 12px; padding: 7px 10px; cursor: pointer; }
 button:hover:not(:disabled) { background: var(--accent-strong, #088784); }
 button:disabled { opacity: .5; cursor: default; }
 button:focus-visible { outline: 2px solid var(--accent, #0aa19e); outline-offset: 2px; }
