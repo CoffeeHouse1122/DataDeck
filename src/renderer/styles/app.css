@@ -78,9 +78,6 @@ h1 { font-size: 19px; letter-spacing: -.4px; margin: 0; font-weight: 700; }
 .icon-button { width: 28px; height: 28px; padding: 0; flex: none; background: white; color: #53627a; font-size: 15px; }
 .icon-button:hover { background: #eef6f5; }
 .open-output { width: 100%; margin-top: 3px; }
-.result-notes { margin-top: 9px; border-top: 1px solid #edf0f3; padding-top: 8px; color: #748096; font-size: 11px; }
-.result-notes summary { cursor: pointer; }
-.result-notes ul { padding-left: 18px; margin: 8px 0 0; overflow-wrap: anywhere; }
 .statusbar { border-top: 1px solid #e2e7eb; background: #f8fafc; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; font-size: 10px; color: #7b8798; }
 .statusbar > span:first-child { display: inline-flex; align-items: center; gap: 6px; }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: #349653; }

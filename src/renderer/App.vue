@@ -431,7 +431,6 @@ onBeforeUnmount(() => {
             <button class="icon-button" :aria-label="`打开${file.label}所在目录`" :title="file.path" @click="revealOutput(file.path)"><i aria-hidden="true" class="ri-folder-open-line" /></button>
           </div>
           <button class="button button--subtle open-output" @click="revealOutput(generatedDirectory)"><i aria-hidden="true" class="ri-folder-open-line" />打开输出目录</button>
-          <details v-if="result.assumptions.length" class="result-notes"><summary>生成说明 · {{ result.assumptions.length }} 项</summary><ul><li v-for="item in result.assumptions" :key="item">{{ item }}</li></ul></details>
         </section>
       </main>
     </SimpleBarScroll>
