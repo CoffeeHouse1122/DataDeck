@@ -263,10 +263,6 @@ async function minimizeWindow(): Promise<void> {
   await window.electronApi.minimizeWindow()
 }
 
-async function toggleMaximizeWindow(): Promise<void> {
-  Object.assign(windowState, await window.electronApi.toggleMaximizeWindow())
-}
-
 async function closeWindow(): Promise<void> {
   await window.electronApi.closeWindow()
 }
@@ -362,7 +358,6 @@ onBeforeUnmount(() => {
         <button class="titlebar-button" title="刷新" aria-label="刷新" :disabled="busy" @click="refreshWindow"><i aria-hidden="true" class="ri-refresh-line" /></button>
         <button class="titlebar-button" :class="{ active: windowState.isAlwaysOnTop }" :title="windowState.isAlwaysOnTop ? '取消置顶' : '窗口置顶'" aria-label="窗口置顶" :aria-pressed="windowState.isAlwaysOnTop" @click="toggleAlwaysOnTop"><i aria-hidden="true" class="ri-pushpin-line" /></button>
         <button class="titlebar-button" title="最小化" aria-label="最小化" @click="minimizeWindow"><i aria-hidden="true" class="ri-subtract-line" /></button>
-        <button class="titlebar-button" :title="windowState.isMaximized ? '还原' : '最大化'" aria-label="最大化或还原" @click="toggleMaximizeWindow"><i aria-hidden="true" :class="windowState.isMaximized ? 'ri-checkbox-multiple-blank-line' : 'ri-checkbox-blank-line'" /></button>
         <button class="titlebar-button titlebar-button--close" title="关闭" aria-label="关闭" @click="closeWindow"><i aria-hidden="true" class="ri-close-line" /></button>
       </div>
     </header>
