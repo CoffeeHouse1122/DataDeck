@@ -11,7 +11,7 @@ const minimatch = require('minimatch')
 const config = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).build
 
 // Exercise the packaging allow/exclude rules against private and runtime files.
-assert.deepEqual(config.extraResources, [{ from: 'build/icons', to: 'icons' }])
+assert.deepEqual(config.extraResources, [{ from: 'resources/icons', to: 'icons' }])
 assert.equal(config.extraFiles, undefined)
 const included = (filename) => config.files.some((pattern) => !pattern.startsWith('!') && minimatch(filename, pattern, { dot: true }))
   && !config.files.some((pattern) => pattern.startsWith('!') && minimatch(filename, pattern.slice(1), { dot: true }))
@@ -28,7 +28,7 @@ const output = await fs.mkdtemp(path.join(root, 'out', 'private-resources-check-
 await build({
   configFile: false, root, logLevel: 'error',
   build: {
-    ssr: path.join(root, 'src/electron/main/services/settings.ts'), outDir: output, emptyOutDir: false,
+    ssr: path.join(root, 'src/main/services/settings.ts'), outDir: output, emptyOutDir: false,
     rollupOptions: { output: { format: 'cjs', entryFileNames: 'settings.cjs' } }
   }
 })

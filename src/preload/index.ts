@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AppPreferences, AppUpdateState, ElectronApi, FilePickerOptions, PipelineInput, PipelineProgressEvent, PipelineResult, WindowState } from '../../shared/contracts'
+import type { AppPreferences, AppUpdateState, ElectronApi, FilePickerOptions, PipelineInput, PipelineProgressEvent, PipelineResult, WindowState } from '../shared/contracts'
 
 const electronApi: ElectronApi = {
   getUpdateState: () => ipcRenderer.invoke('update:state'),

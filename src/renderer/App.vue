@@ -4,7 +4,7 @@ import CustomSelect from './components/CustomSelect.vue'
 import PathField from './components/PathField.vue'
 import SimpleBarScroll from './components/SimpleBarScroll.vue'
 import UpdatePanel from './components/UpdatePanel.vue'
-import brandIconUrl from '../../build/icons/favicon-256x256.png'
+import brandIconUrl from '../../resources/icons/favicon-256x256.png'
 import { FOCUS_JOURNAL_OPTIONS, PATH_FIELD_META } from '../shared/constants'
 import {
   DEFAULT_FOCUS_JOURNAL_ORDER,

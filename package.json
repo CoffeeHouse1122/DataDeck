@@ -21,7 +21,6 @@
     "exceljs": "^4.4.0",
     "fast-xml-parser": "^4.5.3",
     "jszip": "^3.10.1",
-    "pptxgenjs": "^3.12.0",
     "remixicon": "^4.6.0",
     "simplebar": "^6.3.3",
     "vue": "^3.5.13"
@@ -59,20 +58,20 @@
     ],
     "extraResources": [
       {
-        "from": "build/icons",
+        "from": "resources/icons",
         "to": "icons"
       }
     ],
     "win": {
       "verifyUpdateCodeSignature": false,
-      "icon": "build/icons/favicon.ico",
+      "icon": "resources/icons/favicon.ico",
       "target": [
         "nsis"
       ]
     },
     "nsis": {
-      "installerIcon": "build/icons/favicon.ico",
-      "uninstallerIcon": "build/icons/favicon.ico",
+      "installerIcon": "resources/icons/favicon.ico",
+      "uninstallerIcon": "resources/icons/favicon.ico",
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
     }

@@ -16,7 +16,7 @@ const require = createRequire(import.meta.url)
 await fs.mkdir(path.join(root, 'out'), { recursive: true })
 const output = await fs.mkdtemp(path.join(root, 'out', 'updater-check-'))
 await build({ configFile: false, root, logLevel: 'error', build: {
-  ssr: path.join(root, 'src/electron/main/services/updater.ts'), outDir: output, emptyOutDir: false,
+  ssr: path.join(root, 'src/main/services/updater.ts'), outDir: output, emptyOutDir: false,
   rollupOptions: { output: { format: 'cjs', entryFileNames: 'updater.cjs' } }
 } })
 const { UpdateController } = require(path.join(output, 'updater.cjs'))

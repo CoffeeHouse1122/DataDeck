@@ -1,5 +1,5 @@
 import type { AppUpdater } from 'electron-updater'
-import type { AppUpdateState } from '../../../shared/contracts'
+import type { AppUpdateState } from '../../shared/contracts'
 
 type UpdateClient = Pick<AppUpdater, 'on' | 'autoDownload' | 'autoInstallOnAppQuit' | 'allowPrerelease' | 'allowDowngrade' | 'checkForUpdates' | 'downloadUpdate' | 'quitAndInstall'>
 

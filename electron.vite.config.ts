@@ -7,14 +7,13 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
-        input: resolve('src/electron/main/index.ts')
+        input: resolve('src/main/index.ts')
       }
     },
     resolve: {
       alias: {
         '@shared': resolve('src/shared'),
-        '@electron': resolve('src/electron'),
-        '@main': resolve('src/electron/main')
+        '@main': resolve('src/main')
       }
     }
   },
@@ -22,7 +21,7 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
-        input: resolve('src/electron/preload/index.ts')
+        input: resolve('src/preload/index.ts')
       }
     },
     resolve: {

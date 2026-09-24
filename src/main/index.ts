@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage,
 import fs from 'node:fs'
 import path from 'node:path'
 import electronUpdater from 'electron-updater'
-import type { AppPreferences, FilePickerOptions, PipelineInput, SelectedPaths, WindowState } from '../../shared/contracts'
+import type { AppPreferences, FilePickerOptions, PipelineInput, SelectedPaths, WindowState } from '../shared/contracts'
 import { loadPreferences, savePreferences } from './services/settings'
 import { runPipeline } from './services/pipeline'
 import { UpdateController } from './services/updater'
@@ -72,7 +72,7 @@ function createAppIcon(): Electron.NativeImage {
 function appIconPath(fileName: string): string {
   return app.isPackaged
     ? path.join(process.resourcesPath, 'icons', fileName)
-    : path.join(process.cwd(), 'build', 'icons', fileName)
+    : path.join(process.cwd(), 'resources', 'icons', fileName)
 }
 
 function windowIconPath(): string {

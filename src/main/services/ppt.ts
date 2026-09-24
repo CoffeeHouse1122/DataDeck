@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import ExcelJS from 'exceljs'
 import JSZip from 'jszip'
-import type { PipelineResult } from '../../../shared/contracts'
+import type { PipelineResult } from '../../shared/contracts'
 import { renderTableSvg } from './svg'
 
 type CompletionRow = {

@@ -31,7 +31,7 @@ async function ensureDir(directory) {
 }
 
 const entry = path.join(output, 'services-entry.ts')
-await fs.writeFile(entry, `export { buildPresentation } from ${JSON.stringify(path.join(root, 'src/electron/main/services/ppt.ts'))}; export { runPipeline } from ${JSON.stringify(path.join(root, 'src/electron/main/services/pipeline.ts'))};`)
+await fs.writeFile(entry, `export { buildPresentation } from ${JSON.stringify(path.join(root, 'src/main/services/ppt.ts'))}; export { runPipeline } from ${JSON.stringify(path.join(root, 'src/main/services/pipeline.ts'))};`)
 await build({
   configFile: false,
   root,
