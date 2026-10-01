@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import CustomSelect from './components/CustomSelect.vue'
 import PathField from './components/PathField.vue'
+import GenerationDetails from './components/GenerationDetails.vue'
 import SimpleBarScroll from './components/SimpleBarScroll.vue'
 import UpdatePanel from './components/UpdatePanel.vue'
 import brandIconUrl from '../../resources/icons/favicon-256x256.png'
@@ -393,19 +394,19 @@ onBeforeUnmount(() => {
         </header>
 
         <section class="panel source-panel" aria-label="MR 数据源">
-          <PathField :label="sourceField.label" :description="sourceField.description" :value="paths.mrWorkbook" icon="ri-file-excel-2-line" :disabled="busy || !initialized" @pick="handlePick(sourceField)" @reveal="handleReveal('mrWorkbook')" />
-          <p class="report-month"><span>报告月份</span><strong>{{ reportMonth }}</strong></p>
+          <PathField :label="sourceField.label" :description="sourceField.description" :value="paths.mrWorkbook" icon="ri-file-excel-2-line" :disabled="busy || !initialized" @pick="handlePick(sourceField)" @reveal="handleReveal('mrWorkbook')">
+            <template #label-extra><span class="report-month" :title="`报告月份：${reportMonth}`">{{ reportMonth }}</span></template>
+          </PathField>
         </section>
 
         <section class="panel template-panel">
-          <button class="disclosure template-toggle" :aria-expanded="templatesOpen" aria-controls="template-fields" @click="templatesOpen = !templatesOpen">
+          <button class="disclosure template-toggle" title="手动选择，路径自动记住；点击展开或收起" :aria-expanded="templatesOpen" aria-controls="template-fields" @click="templatesOpen = !templatesOpen">
             <span><i aria-hidden="true" class="ri-stack-line" />模板与映射</span>
             <small :class="{ ready: templateCount === 4 }"><i aria-hidden="true" :class="templateCount === 4 ? 'ri-checkbox-circle-fill' : 'ri-information-line'" /> {{ templateCount }}/4 {{ templateCount === 4 ? '已配置' : '待补齐' }}</small>
             <i aria-hidden="true" :class="templatesOpen ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" />
           </button>
           <div v-show="templatesOpen" id="template-fields" class="template-fields">
             <PathField v-for="item in templateFields" :key="item.key" compact :label="item.label" :description="item.description" :value="paths[item.key]" :icon="item.key === 'pptTemplate' ? 'ri-file-ppt-2-line' : 'ri-file-excel-2-line'" :disabled="busy || !initialized" @pick="handlePick(item)" @reveal="handleReveal(item.key)" />
-            <p class="hint">手动选择，路径自动记住</p>
           </div>
         </section>
 
@@ -418,46 +419,39 @@ onBeforeUnmount(() => {
             <i aria-hidden="true" :class="running ? 'ri-loader-4-line spin' : 'ri-play-fill'" />
             {{ running ? '正在生成…' : updateState.phase === 'installing' ? '正在安装更新…' : result ? '重新生成文件' : '生成月会文件' }}
           </button>
-          <p class="hint" :class="{ 'override-notice': hasSummaryOverrides }">{{ hasSummaryOverrides ? '已启用手动修正 · 将覆盖对应的 MR 自动汇总值' : '生成月会 Excel、人员 Excel 和 PPT' }}</p>
+          <p v-if="hasSummaryOverrides" class="hint override-notice">已启用手动修正 · 将覆盖对应的 MR 自动汇总值</p>
         </div>
 
         <section class="panel progress-panel" aria-label="生成状态">
-          <header v-if="running || result || runError" class="panel__head"><strong>本次生成</strong><span class="state-pill" :class="{ error: runError, pending: running }">{{ running ? '处理中' : runError ? '失败' : '已完成' }}</span></header>
           <div class="run-status" role="status" aria-live="polite">
             <i aria-hidden="true" :class="runError ? 'ri-error-warning-fill error-text' : running ? 'ri-loader-4-line spin' : result || !missingFields.length ? 'ri-checkbox-circle-fill ready' : 'ri-information-line'" />
             <div>
               <strong>{{ runError ? '生成失败，请检查后重试' : running ? currentStep : result ? '3 个文件已生成' : missingFields.length ? `还需选择 ${missingFields.length} 项文件或目录` : '已就绪，可以生成' }}</strong>
-              <p v-if="runError" class="error-text" role="alert">{{ errorSummary }}</p>
-              <p v-else-if="running">请稍候…</p>
-              <p v-else-if="result">用时 {{ elapsedSeconds }} 秒 · {{ result.detected.reportMonthLabel }}</p>
-              <p v-else>生成后在此查看结果</p>
+              <p v-if="running">请稍候…</p>
+              <p v-else-if="!result && !runError">生成后在此查看结果</p>
             </div>
+            <span v-if="result" class="run-duration">用时 {{ elapsedSeconds }} 秒</span>
+            <button v-if="result" class="icon-button" aria-label="打开输出目录" title="打开输出目录" @click="revealOutput(generatedDirectory)"><i aria-hidden="true" class="ri-folder-open-line" /></button>
           </div>
           <progress v-if="running" class="generation-progress" aria-label="文件生成进度" />
           <div v-if="issueDetails.length" class="issue-notice">
-            <p v-if="issues.length" class="issue-summary" role="status"><i aria-hidden="true" class="ri-error-warning-line" />{{ issueSummary }}</p>
-            <button class="disclosure issue-toggle" :aria-expanded="detailsOpen" aria-controls="issue-details" @click="detailsOpen = !detailsOpen"><span>{{ detailsOpen ? '收起详情' : '查看详情' }}</span><i aria-hidden="true" :class="detailsOpen ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" /></button>
-            <div v-if="detailsOpen" id="issue-details" class="issue-details">
-              <div v-for="(entry, index) in issueDetails" :key="index"><strong>{{ entry.label }}</strong><p>{{ entry.message }}</p></div>
-            </div>
+            <p class="issue-summary" :class="{ 'error-text': runError }" :role="runError ? 'alert' : 'status'" :title="runError ? errorSummary : issueSummary"><i aria-hidden="true" class="ri-error-warning-line" /><span>{{ runError ? errorSummary : issueSummary }}</span></p>
+            <button class="issue-toggle" aria-haspopup="dialog" @click="detailsOpen = true">查看详情<i aria-hidden="true" class="ri-arrow-right-s-line" /></button>
           </div>
-        </section>
-
-        <section v-if="result" class="panel results-panel" aria-label="生成结果">
-          <header class="panel__head">
-            <strong>生成结果</strong>
-            <button class="button button--subtle open-output" @click="revealOutput(generatedDirectory)"><i aria-hidden="true" class="ri-folder-open-line" />打开输出目录</button>
-          </header>
-          <div v-for="file in outputFiles" :key="file.label" class="result-row">
-            <i aria-hidden="true" :class="file.icon" />
-            <div :title="file.path"><strong>{{ file.label }}</strong><span>{{ file.icon === 'ri-file-ppt-2-line' ? 'PPT' : 'Excel' }}</span></div>
-            <button class="icon-button" :aria-label="`打开${file.label}所在目录`" :title="file.path" @click="revealOutput(file.path)"><i aria-hidden="true" class="ri-folder-open-line" /></button>
+          <div v-if="result" class="result-files" role="region" aria-label="生成结果">
+            <div v-for="file in outputFiles" :key="file.label" class="result-row">
+              <i aria-hidden="true" :class="file.icon" />
+              <div :title="file.path"><strong>{{ file.label }}</strong><span>{{ file.icon === 'ri-file-ppt-2-line' ? 'PPT' : 'Excel' }}</span></div>
+              <button class="icon-button" :aria-label="`打开${file.label}所在目录`" :title="file.path" @click="revealOutput(file.path)"><i aria-hidden="true" class="ri-folder-open-line" /></button>
+            </div>
           </div>
         </section>
       </main>
     </SimpleBarScroll>
 
     <footer class="statusbar"><span><span class="status-dot" :class="{ warning: missingFields.length || runError }" />{{ statusText }}</span><span>v{{ updateState.currentVersion || '—' }}</span></footer>
+
+    <GenerationDetails v-if="detailsOpen" :entries="issueDetails" @close="detailsOpen = false" />
 
     <transition name="drawer-fade">
       <div v-if="settingsOpen" class="drawer-backdrop" @click="settingsOpen = false" />

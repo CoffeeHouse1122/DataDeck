@@ -15,7 +15,7 @@ const displayValue = computed(() => props.value ? props.fullPath ? props.value :
 
 <template>
   <div class="path-field" :class="{ compact }" :title="description">
-    <div class="path-label" :title="description"><span>{{ label }}</span></div>
+    <div class="path-label" :title="description"><span>{{ label }}</span><slot name="label-extra" /></div>
     <div class="path-controls">
       <button class="path-picker" :title="value ? `${description}\n当前路径：${value}` : description" :aria-label="'选择' + label" :disabled="disabled" @click="$emit('pick')">
         <i :class="icon" aria-hidden="true" /><span :class="{ placeholder: !value }">{{ displayValue }}</span>
@@ -27,8 +27,8 @@ const displayValue = computed(() => props.value ? props.fullPath ? props.value :
 </template>
 
 <style scoped>
-.path-field { display: grid; gap: 8px; min-width: 0; }
-.path-label { min-width: 0; font-weight: 650; font-size: 13px; color: #24303f; }
+.path-field { display: grid; gap: 5px; min-width: 0; }
+.path-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; font-weight: 650; font-size: 13px; color: #24303f; }
 .path-controls { display: flex; gap: 6px; min-width: 0; }
 .path-picker, .path-tool { height: 34px; border: 1px solid #dce3e9; border-radius: 5px; background: white; color: #354359; display: inline-flex; align-items: center; cursor: pointer; }
 .path-picker { flex: 1; min-width: 0; gap: 8px; padding: 0 8px; text-align: left; font-size: 12px; }
