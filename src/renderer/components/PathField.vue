@@ -4,25 +4,24 @@ const props = withDefaults(defineProps<{
   label: string
   description: string
   value: string
-  defaultValue?: string
   icon: string
   compact?: boolean
   fullPath?: boolean
   disabled?: boolean
-}>(), { defaultValue: '', compact: false, fullPath: false, disabled: false })
-defineEmits<{ pick: []; reveal: []; reset: [] }>()
+}>(), { compact: false, fullPath: false, disabled: false })
+defineEmits<{ pick: []; reveal: [] }>()
 const displayValue = computed(() => props.value ? props.fullPath ? props.value : props.value.split(/[\\/]/).filter(Boolean).at(-1) : '点击选择')
 </script>
 
 <template>
-  <div class="path-field" :class="{ compact }">
+  <div class="path-field" :class="{ compact }" :title="description">
     <div class="path-label" :title="description"><span>{{ label }}</span></div>
     <div class="path-controls">
-      <button class="path-picker" :title="value || description" :aria-label="'选择' + label" :disabled="disabled" @click="$emit('pick')">
+      <button class="path-picker" :title="value ? `${description}\n当前路径：${value}` : description" :aria-label="'选择' + label" :disabled="disabled" @click="$emit('pick')">
         <i :class="icon" aria-hidden="true" /><span :class="{ placeholder: !value }">{{ displayValue }}</span>
       </button>
+      <button class="path-tool" :title="'选择' + label + '路径'" :aria-label="'选择' + label + '路径'" :disabled="disabled" @click="$emit('pick')"><i aria-hidden="true" class="ri-folder-add-line" /></button>
       <button class="path-tool" :title="'打开' + label + '所在位置'" :aria-label="'打开' + label + '所在位置'" :disabled="!value" @click="$emit('reveal')"><i aria-hidden="true" class="ri-folder-open-line" /></button>
-      <button class="path-tool" :title="defaultValue ? '恢复默认路径' : '清除路径'" :aria-label="(defaultValue ? '重置' : '清除') + label" :disabled="disabled || !value" @click="$emit('reset')"><i aria-hidden="true" :class="defaultValue ? 'ri-restart-line' : 'ri-close-line'" /></button>
     </div>
   </div>
 </template>

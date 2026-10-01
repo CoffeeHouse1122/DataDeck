@@ -33,7 +33,6 @@ const paths = reactive<SelectedPaths>({
   pptTemplate: '',
   outputDir: ''
 })
-const defaultPaths = reactive<Partial<SelectedPaths>>({})
 
 const closeBehavior = ref<AppPreferences['closeBehavior']>('tray')
 const forceAeStaffInput = ref('')
@@ -55,7 +54,7 @@ const windowState = reactive<WindowState>({
 const sourceField = PATH_FIELD_META.find((item) => item.key === 'mrWorkbook')!
 const outputField = PATH_FIELD_META.find((item) => item.key === 'outputDir')!
 const templateFields = PATH_FIELD_META.filter((item) => !['mrWorkbook', 'outputDir'].includes(item.key))
-const templatesOpen = ref(false)
+const templatesOpen = ref(true)
 const detailsOpen = ref(false)
 const initialized = ref(false)
 const runError = ref('')
@@ -245,12 +244,6 @@ async function handleReveal(key: keyof SelectedPaths): Promise<void> {
   }
 }
 
-async function handleReset(key: keyof SelectedPaths): Promise<void> {
-  if (busy.value) return
-  paths[key] = defaultPaths[key] ?? ''
-  try { await savePreferences(false) } catch { pushToast('路径保存失败，请重试保存设置。', 'error') }
-}
-
 async function revealOutput(targetPath: string): Promise<void> {
   await window.electronApi.revealPath(targetPath)
 }
@@ -348,11 +341,9 @@ onMounted(async () => {
       updateState.value = state
     })
     updateState.value = await window.electronApi.getUpdateState()
-    Object.assign(defaultPaths, await window.electronApi.getDefaultPaths())
     Object.assign(windowState, await window.electronApi.getWindowState())
     const preferences = await window.electronApi.getPreferences()
     applyPreferences(preferences)
-    templatesOpen.value = templateCount.value < templateFields.length
     initialized.value = true
     await nextTick()
     resizeForceAeStaffTextarea()
@@ -402,7 +393,7 @@ onBeforeUnmount(() => {
         </header>
 
         <section class="panel source-panel" aria-label="MR 数据源">
-          <PathField :label="sourceField.label" :description="sourceField.description" :value="paths.mrWorkbook" :default-value="defaultPaths.mrWorkbook" icon="ri-file-excel-2-line" :disabled="busy || !initialized" @pick="handlePick(sourceField)" @reset="handleReset('mrWorkbook')" @reveal="handleReveal('mrWorkbook')" />
+          <PathField :label="sourceField.label" :description="sourceField.description" :value="paths.mrWorkbook" icon="ri-file-excel-2-line" :disabled="busy || !initialized" @pick="handlePick(sourceField)" @reveal="handleReveal('mrWorkbook')" />
           <p class="report-month"><span>报告月份</span><strong>{{ reportMonth }}</strong></p>
         </section>
 
@@ -413,13 +404,13 @@ onBeforeUnmount(() => {
             <i aria-hidden="true" :class="templatesOpen ? 'ri-arrow-up-s-line' : 'ri-arrow-down-s-line'" />
           </button>
           <div v-show="templatesOpen" id="template-fields" class="template-fields">
-            <PathField v-for="item in templateFields" :key="item.key" compact :label="item.label" :description="item.description" :value="paths[item.key]" :default-value="defaultPaths[item.key]" :icon="item.key === 'pptTemplate' ? 'ri-file-ppt-2-line' : 'ri-file-excel-2-line'" :disabled="busy || !initialized" @pick="handlePick(item)" @reset="handleReset(item.key)" @reveal="handleReveal(item.key)" />
+            <PathField v-for="item in templateFields" :key="item.key" compact :label="item.label" :description="item.description" :value="paths[item.key]" :icon="item.key === 'pptTemplate' ? 'ri-file-ppt-2-line' : 'ri-file-excel-2-line'" :disabled="busy || !initialized" @pick="handlePick(item)" @reveal="handleReveal(item.key)" />
             <p class="hint">手动选择，路径自动记住</p>
           </div>
         </section>
 
         <section class="panel" aria-label="输出目录">
-          <PathField :label="outputField.label" :description="outputField.description" :value="paths.outputDir" :default-value="defaultPaths.outputDir" icon="ri-folder-3-line" full-path :disabled="busy || !initialized" @pick="handlePick(outputField)" @reset="handleReset('outputDir')" @reveal="handleReveal('outputDir')" />
+          <PathField :label="outputField.label" :description="outputField.description" :value="paths.outputDir" icon="ri-folder-3-line" full-path :disabled="busy || !initialized" @pick="handlePick(outputField)" @reveal="handleReveal('outputDir')" />
         </section>
 
         <div class="generate-actions">
