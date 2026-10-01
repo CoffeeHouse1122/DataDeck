@@ -34,7 +34,7 @@ h1 { font-size: 19px; letter-spacing: -.4px; margin: 0; font-weight: 700; }
 .template-toggle > span > i { font-size: 19px; line-height: 1; }
 .template-toggle small { color: #95652d; font-size: 11px; margin-left: auto; white-space: nowrap; }
 .template-toggle > i { font-size: 16px; }
-.template-fields { display: grid; gap: 2px; padding: 2px 10px 8px; }
+.template-fields { display: grid; gap: 8px; padding: 2px 10px 8px; }
 .ready, .template-toggle .ready { color: #268453; }
 .button, .icon-button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; border-radius: 5px; border: 1px solid #dce3e9; cursor: pointer; -webkit-app-region: no-drag; }
 .button { min-height: 32px; padding: 6px 10px; font-size: 12px; font-weight: 500; }
@@ -115,4 +115,4 @@ h1 { font-size: 19px; letter-spacing: -.4px; margin: 0; font-weight: 700; }
 .drawer-slide-enter-from, .drawer-slide-leave-to { transform: translateX(100%); }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .drawer-slide-enter-active, .drawer-slide-leave-active, .drawer-fade-enter-active, .drawer-fade-leave-active { transition: none; } }
-@media (max-width: 390px) { .workspace { padding-inline: 10px; } .panel { padding: 10px; } .template-panel { padding: 0; } .template-fields { padding-inline: 10px; } .template-toggle { padding-inline: 10px; gap: 5px; } .template-toggle small { font-size: 10px; } }
+@media (max-width: 390px) { .workspace { padding-inline: 10px; } .panel { padding: 10px; } .template-panel { padding: 0; } .template-fields { gap: 4px; padding-inline: 10px; } .template-toggle { padding-inline: 10px; gap: 5px; } .template-toggle small { font-size: 10px; } }
