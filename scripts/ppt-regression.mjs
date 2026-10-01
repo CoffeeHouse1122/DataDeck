@@ -31,7 +31,7 @@ async function ensureDir(directory) {
 }
 
 const entry = path.join(output, 'services-entry.ts')
-await fs.writeFile(entry, `export { buildPresentation } from ${JSON.stringify(path.join(root, 'src/main/services/ppt.ts'))}; export { runPipeline } from ${JSON.stringify(path.join(root, 'src/main/services/pipeline.ts'))};`)
+await fs.writeFile(entry, `export { buildPresentation } from ${JSON.stringify(path.join(root, 'src/main/services/ppt.ts'))}; export { runPipeline } from ${JSON.stringify(path.join(root, 'src/main/services/pipeline.ts'))}; export { colorMonthSeries, monthSeriesColor } from ${JSON.stringify(path.join(root, 'src/main/services/chart-colors.ts'))};`)
 await build({
   configFile: false,
   root,
@@ -41,7 +41,7 @@ await build({
     rollupOptions: { output: { format: 'cjs', entryFileNames: 'services.cjs' } }
   }
 })
-const { buildPresentation, runPipeline } = createRequire(import.meta.url)(path.join(output, 'services.cjs'))
+const { buildPresentation, runPipeline, colorMonthSeries, monthSeriesColor } = createRequire(import.meta.url)(path.join(output, 'services.cjs'))
 const templatePath = path.join(root, 'docs/Section Health月会.pptx')
 const template = await JSZip.loadAsync(await fs.readFile(templatePath))
 
@@ -85,6 +85,7 @@ function descendants(node, key) {
   ])
 }
 
+const observedMonthColors = new Map()
 async function verifyChart(zip, chartPath, expected) {
   const chart = parse(await read(zip, chartPath)).chartSpace
   const series = descendants(chart.chart.plotArea, 'ser')
@@ -103,11 +104,19 @@ async function verifyChart(zip, chartPath, expected) {
     assert.equal(sheet.name, expected.sheetName)
     assert.equal(sheet.rowCount, expected.metrics.length + 1)
   }
+  const chartColors = new Set()
   series.forEach((ser, index) => {
     const label = `${chartPath}, series ${index}`
     assert.equal(Number(ser.idx['@_val']), index, `${label}: idx`)
     assert.equal(Number(ser.order['@_val']), index, `${label}: order`)
     const month = sheet.getCell(1, index + 2).value
+    const color = ser.spPr?.solidFill?.srgbClr?.['@_val']
+    assert.match(color ?? '', /^[A-F0-9]{6}$/, `${label}: explicit month fill`)
+    assert.ok(!chartColors.has(color), `${label}: month colors must differ`)
+    chartColors.add(color)
+    const monthKey = String(month).replace(/^\d{4}-/, '')
+    if (observedMonthColors.has(monthKey)) assert.equal(color, observedMonthColors.get(monthKey), `${label}: consistent month color`)
+    observedMonthColors.set(monthKey, color)
     const categories = Array.from({ length: sheet.rowCount - 1 }, (_, row) => sheet.getCell(row + 2, 1).value)
     const values = categories.map((_, row) => sheet.getCell(row + 2, index + 2).value)
     if (expected) {
@@ -204,6 +213,26 @@ async function workbookSnapshot(filename) {
 }
 
 try {
+  if (process.argv.includes('--charts-only')) {
+    const months = ['Jan.', 'Feb.', 'Mar.', 'Apr.', 'May', 'Jun.', 'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.']
+    assert.equal(new Set(months.map((name, index) => monthSeriesColor(name, index))).size, 12)
+    months.forEach((name, index) => assert.equal(monthSeriesColor(name, 0), monthSeriesColor(`2026-${String(index + 1).padStart(2, '0')}`, 0)))
+    const source = '<c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:v>Aug.</c:v></c:tx><c:spPr><a:gradFill><a:gsLst/></a:gradFill><a:ln w="12700"><a:solidFill><a:srgbClr val="112233"/></a:solidFill></a:ln></c:spPr><c:dPt><c:idx val="0"/><c:spPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></c:spPr></c:dPt></c:ser>'
+    const colored = colorMonthSeries(source, 'Aug.', 7)
+    const parsed = parse(colored).ser
+    assert.equal(parsed.spPr.solidFill.srgbClr['@_val'], parsed.dPt.spPr.solidFill.srgbClr['@_val'])
+    assert.equal(parsed.spPr.ln.solidFill.srgbClr['@_val'], '112233', 'Keep outline styling')
+    assert.equal(parsed.spPr.gradFill, undefined)
+    assert.equal(colorMonthSeries(colored, 'Aug.', 7), colored, 'Repeat generation is stable')
+    const noStyle = '<c:ser><c:idx val="0"/><c:order val="0"/><c:tx><c:v>Jan.</c:v></c:tx></c:ser>'
+    assert.ok(parse(colorMonthSeries(noStyle, 'Jan.', 0)).ser.spPr.solidFill)
+    for (const month of [1, 8, 12]) {
+      const { input, expectations } = fixture(month)
+      await buildPresentation(input)
+      await verifyDeck(input.outputPath, expectations)
+      console.log(`PASS: month ${month}, 11 charts, distinct consistent colors, exact data/formulas and preserved template`)
+    }
+  } else {
   const pipelineInput = {
     paths: {
       mrWorkbook: path.join(root, 'docs/MR_202603-202603.xlsx'), monthlyTemplate: path.join(root, 'docs/monthly-data-generated-202603.xlsx'),
@@ -238,6 +267,7 @@ try {
       await verifyDeck(input.outputPath, expectations)
       console.log(`PASS: month ${month}, exact points/formulas/workbooks, unchanged template pages`)
     }
+  }
   }
   console.log(`Artifacts: ${output}`)
 } catch (error) {

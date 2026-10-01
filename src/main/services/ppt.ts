@@ -4,6 +4,7 @@ import ExcelJS from 'exceljs'
 import JSZip from 'jszip'
 import type { PipelineResult } from '../../shared/contracts'
 import { renderTableSvg } from './svg'
+import { colorMonthSeries } from './chart-colors'
 
 type CompletionRow = {
   group: string
@@ -448,6 +449,7 @@ function updateChartXml(xml: string, data: ChartData): string {
     serXml = replaceNthCache(serXml, 'strCache', 1, labels, true)
     serXml = replaceNthCache(serXml, 'numCache', 0, series.values, false)
     serXml = setSeriesDataLabelStyle(serXml, index === data.series.length - 1 ? 1500 : compactLabelSize)
+    serXml = colorMonthSeries(serXml, series.name, index)
     return replaceSerFormulae(serXml, data, index)
   }).join('')
 
