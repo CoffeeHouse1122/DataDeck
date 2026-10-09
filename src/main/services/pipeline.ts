@@ -1186,7 +1186,8 @@ function populateOfficeSheet(sheet: ExcelJS.Worksheet, rows: OfficeRow[], contex
     for (const col of [11]) {
       targetRow.getCell(col).numFmt = '0.00'
     }
-    for (const col of [13]) {
+    // Counts must not inherit percentage formats from a reused monthly template.
+    for (const col of [13, 14]) {
       targetRow.getCell(col).numFmt = '0'
     }
 
@@ -1297,6 +1298,8 @@ function populateCompletionSheet(sheet: ExcelJS.Worksheet, rows: CompletionRow[]
   const headers = ['', 'Journal', 'Contrib.', context.quarterPubHeader, 'Yearly Publ Target', 'Publication TCR', context.quarterRevenueHeader, 'Revenue Target Final', 'Revenue TCR', 'Waiver Rate', 'WR Target2026', 'Waiver Rate 2026']
   headers.forEach((header, index) => {
     sheet.getCell(1, index + 1).value = header
+    // Restore the report table even if these columns were hidden in the template.
+    sheet.getColumn(index + 1).hidden = false
   })
   leftAlignHeaderRow(sheet.getRow(1), headers.length)
 
