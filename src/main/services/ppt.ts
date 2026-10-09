@@ -5,6 +5,7 @@ import JSZip from 'jszip'
 import type { PipelineResult } from '../../shared/contracts'
 import { renderTableSvg } from './svg'
 import { colorMonthSeries } from './chart-colors'
+import { updateMetricSlide } from './ppt-metrics'
 
 type CompletionRow = {
   group: string
@@ -344,25 +345,6 @@ function findPictureImageRelId(slideXml: string, preferredNames: string[] = []):
     preferredNames.some((name) => item.name === name || item.descr === name)
   )
   return preferred?.relId ?? null
-}
-
-function updateMetricSlide(xml: string, spotlight: JournalSpotlight): string {
-  const values = [
-    percentText(spotlight.publicationTcr),
-    percentText(spotlight.revenueTcr),
-    percentText(spotlight.waiverRate2026)
-  ]
-  let index = 0
-  return xml
-    .replace(/<a:t>Waiver Rate 2025<\/a:t>/g, '<a:t>Waiver Rate 2026</a:t>')
-    .replace(/<a:t>(\d+(?:\.\d+)?%)<\/a:t>/g, (match) => {
-      if (index >= values.length) {
-        return match
-      }
-      const nextValue = values[index]
-      index += 1
-      return `<a:t>${nextValue}</a:t>`
-    })
 }
 
 function updateTitleSlide(xml: string, reportMonthTitle: string): string {
@@ -1137,10 +1119,9 @@ export async function buildPresentation(input: PptBuildInput): Promise<void> {
 
     const metricSlidePath = `ppt/slides/slide${slideMap.metricSlide}.xml`
     const metricSlide = zip.file(metricSlidePath)
-    if (metricSlide) {
-      zip.file(metricSlidePath, updateMetricSlide(await metricSlide.async('string'), spotlight))
-      checks.push({ target: `slide${slideMap.metricSlide}_metrics`, status: 'updated', detail: `${spotlight.displayName} metrics updated` })
-    }
+    if (!metricSlide) throw new Error(`PPT 模板缺少 ${spotlight.displayName} 指标页，请检查模板页面顺序。`)
+    zip.file(metricSlidePath, updateMetricSlide(await metricSlide.async('string'), spotlight))
+    checks.push({ target: `slide${slideMap.metricSlide}_metrics`, status: 'updated', detail: `${spotlight.displayName} metrics updated` })
 
     await updateJournalCharts(zip, slideMap.chartSlide, series, slideMap.key, checks)
   }
